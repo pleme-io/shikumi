@@ -17515,7 +17515,7 @@ mod tests {
     #[test]
     fn attribution_coordinates_generic_realizable_count_is_five() {
         assert_eq!(realizable_count::<AttributionCoordinates>(), 5);
-        assert_eq!(unrealizable_count::<AttributionCoordinates>(), 7);
+        assert_eq!(unrealizable_count::<AttributionCoordinates>(), 11);
         assert_eq!(
             realizable_count::<AttributionCoordinates>()
                 + unrealizable_count::<AttributionCoordinates>(),
@@ -17537,7 +17537,7 @@ mod tests {
     #[test]
     fn attribution_source_kind_coordinates_generic_realizable_count_is_two() {
         assert_eq!(realizable_count::<AttributionSourceKindCoordinates>(), 2);
-        assert_eq!(unrealizable_count::<AttributionSourceKindCoordinates>(), 7);
+        assert_eq!(unrealizable_count::<AttributionSourceKindCoordinates>(), 10);
         assert_eq!(
             realizable_count::<AttributionSourceKindCoordinates>()
                 + unrealizable_count::<AttributionSourceKindCoordinates>(),
@@ -19630,7 +19630,7 @@ mod tests {
         // lockstep.
         assert_axis_cardinality_matches_trait_all::<Format>(5);
         assert_axis_cardinality_matches_trait_all::<FormatProvenance>(2);
-        assert_axis_cardinality_matches_trait_all::<ConfigSourceKind>(3);
+        assert_axis_cardinality_matches_trait_all::<ConfigSourceKind>(4);
         assert_axis_cardinality_matches_trait_all::<FigmentSourceKind>(3);
         assert_axis_cardinality_matches_trait_all::<ShikumiErrorKind>(7);
         assert_axis_cardinality_matches_trait_all::<FieldPathLocalization>(3);
@@ -19647,10 +19647,10 @@ mod tests {
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
         assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(10);
-        assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
+        assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(16);
         assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(21);
-        assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
-        assert_axis_cardinality_matches_trait_all::<AttributionNameKindCoordinates>(6);
+        assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(12);
+        assert_axis_cardinality_matches_trait_all::<AttributionNameKindCoordinates>(8);
     }
 
     // ---- axis_ordinal closes the dense-embedding round-trip ----
@@ -22183,20 +22183,20 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 20-axis sum: Format=5, FormatProvenance=2, ConfigSourceKind=3,
+        // 20-axis sum: Format=5, FormatProvenance=2, ConfigSourceKind=4,
         // FigmentSourceKind=3, ShikumiErrorKind=7, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=10,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7, DiffLineKind=3 → 78.
-        // 5-cube sum: FormatCoordinates=10, AttributionCoordinates=12,
-        // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 58. Grand total 78+58 = 136.
+        // SecretClientKind=7, DiffLineKind=3 → 79.
+        // 5-cube sum: FormatCoordinates=10, AttributionCoordinates=16,
+        // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=12,
+        // AttributionNameKindCoordinates=8 → 67. Grand total 79+67 = 146.
         assert_eq!(
-            total, 136,
+            total, 146,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 136)",
+             (today's axis_cardinality checksum is 146)",
         );
     }
 
@@ -22485,7 +22485,7 @@ mod tests {
         // axis_cardinality checksum pattern used for the superset
         // ClosedAxis macro:
         // PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2
-        // + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2
+        // + ConfigSourceKind=4 + FigmentSourceKind=3 + AttributionConfidence=2
         // + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3
         // + AttributionRule=5 + WatchEventClass=3 = 41. A duplicated
         // arm would double-count one cardinality; a missing arm would
@@ -22501,11 +22501,11 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 78,
+            total, 79,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 78: \
+             (today's axis_cardinality checksum is 79: \
              PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2 \
-             + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
+             + ConfigSourceKind=4 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
              + EnvMetadataTagKind=2 + SecretBackendKind=10 + SecretRefShape=2 \

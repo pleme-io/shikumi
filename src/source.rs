@@ -30,6 +30,14 @@ pub enum ConfigSource {
     /// A config file on disk. The format is auto-detected from the
     /// extension by [`crate::ProviderChain::with_file`].
     File(PathBuf),
+    /// A command-line layer: a typed flag overlay or a `--set` assignment,
+    /// labelled by the flag surface that produced it (e.g. `"flags"`,
+    /// `"--set"`). The highest-precedence operator layer — it folds above
+    /// [`Self::Env`] in the progressive fold (see
+    /// [`crate::OverlaySlot`]). Built by [`crate::ProgressiveLayer::cli`] /
+    /// [`crate::ProgressiveLayer::set`]; an absent flag contributes no
+    /// leaf, so it can never clobber a file or env value.
+    Cli(String),
 }
 
 impl ConfigSource {
@@ -130,7 +138,32 @@ impl ConfigSource {
     /// [`tests::config_source_is_overlay_agrees_with_kind_pointwise`].
     #[must_use]
     pub const fn is_overlay(&self) -> bool {
-        matches!(self, Self::Env(_) | Self::File(_))
+        matches!(self, Self::Env(_) | Self::File(_) | Self::Cli(_))
+    }
+
+    /// Returns `true` for [`ConfigSource::Cli`].
+    ///
+    /// `const`-callable — tag-side sibling of [`ConfigSourceKind::is_cli`];
+    /// see [`Self::is_file`] for the tag ↔ kind agreement contract.
+    #[must_use]
+    pub const fn is_cli(&self) -> bool {
+        matches!(self, Self::Cli(_))
+    }
+
+    /// Returns the flag label if this source is a [`ConfigSource::Cli`].
+    #[must_use]
+    pub const fn as_cli_flag(&self) -> Option<&str> {
+        match self {
+            Self::Cli(flag) => Some(flag.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Construct a [`Self::Cli`] source from the flag label that produced
+    /// the layer. The Cli-tier peer of [`Self::for_file`] / [`Self::for_env`].
+    #[must_use]
+    pub fn for_cli(flag: impl Into<String>) -> Self {
+        Self::Cli(flag.into())
     }
 
     /// Data-free discriminant of this [`ConfigSource`]: the kind of
@@ -174,6 +207,7 @@ impl ConfigSource {
             Self::Defaults => ConfigSourceKind::Defaults,
             Self::Env(_) => ConfigSourceKind::Env,
             Self::File(_) => ConfigSourceKind::File,
+            Self::Cli(_) => ConfigSourceKind::Cli,
         }
     }
 
@@ -229,6 +263,7 @@ impl ConfigSource {
             Self::Defaults => 0,
             Self::Env(_) => 1,
             Self::File(_) => 2,
+            Self::Cli(_) => 3,
         }
     }
 
@@ -286,6 +321,7 @@ impl ConfigSource {
             Self::Defaults => "defaults",
             Self::Env(_) => "env",
             Self::File(_) => "file",
+            Self::Cli(_) => "cli",
         }
     }
 
@@ -541,11 +577,11 @@ impl ConfigSource {
 /// Data-free discriminant of [`ConfigSource`]: the kind of layer
 /// independent of its inner path or prefix.
 ///
-/// Closed three-way partition over the [`ConfigSource`] variant space,
+/// Closed four-way partition over the [`ConfigSource`] variant space,
 /// returned by [`ConfigSource::kind`]. The enum exists so consumers
 /// that care only about the kind axis (chain filters, layer-class
 /// hashes, the (rule × layer-kind) attribution invariant) match on one
-/// closed enum instead of matching three
+/// closed enum instead of matching four
 /// ([`ConfigSource::is_defaults`] / [`ConfigSource::is_env`] /
 /// [`ConfigSource::is_file`]) booleans together.
 ///
@@ -568,7 +604,7 @@ impl ConfigSource {
 /// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive also
 /// includes [`Ord`] + [`PartialOrd`]. The total order is the
 /// declaration-order lex over [`Self::ALL`]
-/// (`Defaults < Env < File`), so a
+/// (`Defaults < Env < File < Cli`), so a
 /// [`BTreeMap<ConfigSourceKind, T>`][std::collections::BTreeMap] keyed
 /// on the layer-kind axis (per-kind attribution histograms, per-kind
 /// failure-rate dashboards, attestation manifests recording the layer-
@@ -583,7 +619,7 @@ impl ConfigSource {
 /// **Canonical-string surface** — [`fmt::Display`] /
 /// [`std::str::FromStr`] round-trip through the canonical operator-
 /// facing lowercase label [`Self::as_str`] returns (`"defaults"` /
-/// `"env"` / `"file"`); `FromStr` lowers through the trait-default
+/// `"env"` / `"file"` / `"cli"`); `FromStr` lowers through the trait-default
 /// [`crate::ClosedAxisLabel::from_canonical_str`] parse and inherits
 /// ASCII case-insensitivity. Pinned by
 /// [`tests::config_source_kind_display_matches_as_str`] and
@@ -613,6 +649,8 @@ pub enum ConfigSourceKind {
     Env,
     /// Maps to [`ConfigSource::File`] regardless of path value.
     File,
+    /// Maps to [`ConfigSource::Cli`] regardless of flag label.
+    Cli,
 }
 
 impl ConfigSourceKind {
@@ -653,7 +691,7 @@ impl ConfigSourceKind {
     /// test pins that the constant is a set (no double-listed variant).
     /// Together they pin the constant to the variant space the
     /// typescape recognizes.
-    pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File];
+    pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File, Self::Cli];
 
     /// The single BASELINE [`ConfigSourceKind`] variant —
     /// [`Self::Defaults`] (developer-prescribed baseline via
@@ -736,7 +774,7 @@ impl ConfigSourceKind {
     /// behind the explicit slice literal (rather than a filter through
     /// [`Self::is_overlay`]), and the load-bearing agreement and
     /// partition pins.
-    pub const OVERLAY: &'static [Self] = &[Self::Env, Self::File];
+    pub const OVERLAY: &'static [Self] = &[Self::Env, Self::File, Self::Cli];
 
     /// The single `ONLY_DEFAULTS` [`ConfigSourceKind`] variant —
     /// [`Self::Defaults`] (the developer-prescribed baseline layer) — in
@@ -753,7 +791,7 @@ impl ConfigSourceKind {
     /// static-slice altitude the same way the shipped boolean predicates
     /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`]
     /// meta-partition it at the boolean altitude (per
-    /// [`tests::config_source_kind_predicates_are_a_closed_ternary_partition`]).
+    /// [`tests::config_source_kind_predicates_are_a_closed_quaternary_partition`]).
     /// The three constants sit in the same `impl ConfigSourceKind` block
     /// as [`Self::ALL`], [`Self::DEFAULTS`], and [`Self::OVERLAY`], and
     /// follow the same `pub const &'static [Self]` static-slice
@@ -815,15 +853,15 @@ impl ConfigSourceKind {
     /// laws on [`Self::ONLY_ENV`] and [`Self::ONLY_FILE`]) are pinned by
     /// [`tests::config_source_kind_ternary_slices_agree_with_ternary_predicates`].
     /// Ternary partition invariant across all three siblings:
-    /// [`tests::config_source_kind_ternary_slices_partition_all`].
+    /// [`tests::config_source_kind_identity_slices_partition_all`].
     /// Order-preservation against [`Self::ALL`]:
     /// [`tests::config_source_kind_ternary_slices_preserve_all_order`].
     /// No duplicates on any half:
     /// [`tests::config_source_kind_ternary_slices_have_no_duplicates`].
     /// Cardinality-agreement with the boolean poles:
-    /// [`tests::config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// [`tests::config_source_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
     /// Const-time addressability:
-    /// [`tests::config_source_kind_ternary_slices_are_const_addressable`].
+    /// [`tests::config_source_kind_identity_slices_are_const_addressable`].
     pub const ONLY_DEFAULTS: &'static [Self] = &[Self::Defaults];
 
     /// The single `ONLY_ENV` [`ConfigSourceKind`] variant — [`Self::Env`]
@@ -866,8 +904,14 @@ impl ConfigSourceKind {
     /// [`crate::cube::AttributionSourceKindCoordinates`].
     pub const ONLY_FILE: &'static [Self] = &[Self::File];
 
+    /// The single `ONLY_CLI` [`ConfigSourceKind`] variant — [`Self::Cli`]
+    /// (the operator-supplied command-line layer) — the fourth identity
+    /// pole beside [`Self::ONLY_DEFAULTS`] / [`Self::ONLY_ENV`] /
+    /// [`Self::ONLY_FILE`]. See [`Self::ONLY_DEFAULTS`] for the contract.
+    pub const ONLY_CLI: &'static [Self] = &[Self::Cli];
+
     /// Canonical operator-facing lowercase name of the layer kind —
-    /// `"defaults"`, `"env"`, or `"file"`.
+    /// `"defaults"`, `"env"`, `"file"`, or `"cli"`.
     ///
     /// The single source of truth for the layer-kind label strings on
     /// the [`ConfigSourceKind`] axis. Inherent mirror of the
@@ -897,6 +941,7 @@ impl ConfigSourceKind {
             Self::Defaults => "defaults",
             Self::Env => "env",
             Self::File => "file",
+            Self::Cli => "cli",
         }
     }
 
@@ -922,7 +967,7 @@ impl ConfigSourceKind {
     /// against the canonical sample table. The three sibling predicates
     /// form a closed disjoint partition of [`Self::ALL`] — every
     /// variant satisfies exactly one — pinned by
-    /// [`tests::config_source_kind_predicates_are_a_closed_ternary_partition`].
+    /// [`tests::config_source_kind_predicates_are_a_closed_quaternary_partition`].
     #[must_use]
     pub const fn is_defaults(self) -> bool {
         matches!(self, Self::Defaults)
@@ -944,6 +989,15 @@ impl ConfigSourceKind {
     #[must_use]
     pub const fn is_file(self) -> bool {
         matches!(self, Self::File)
+    }
+
+    /// Returns `true` for [`Self::Cli`]; equivalent to
+    /// `self == ConfigSourceKind::Cli`. Kind-side sibling of
+    /// [`ConfigSource::is_cli`]; see [`Self::is_defaults`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_cli(self) -> bool {
+        matches!(self, Self::Cli)
     }
 
     /// Returns `true` for the operator-supplied overlay layer kinds
@@ -983,16 +1037,18 @@ impl ConfigSourceKind {
     /// drifting through any per-polarity consumer.
     #[must_use]
     pub const fn is_overlay(self) -> bool {
-        matches!(self, Self::Env | Self::File)
+        matches!(self, Self::Env | Self::File | Self::Cli)
     }
 
-    /// The [`crate::ClosedAxis`] precedence ordinal of this source-kind
+    /// The [`crate::ClosedAxis`] declaration ordinal of this source-kind
     /// — `0` for [`Self::Defaults`], `1` for [`Self::Env`], `2` for
-    /// [`Self::File`]. The declaration order of [`Self::ALL`], which is
-    /// also the operator-facing [`crate::ProviderChain`] precedence
-    /// within the [`crate::ConfigTierKind::Custom`] row (layers
-    /// `Defaults → Env → File`, later overriding earlier). A higher
-    /// source-kind ordinal wins in the custom-tier fold.
+    /// [`Self::File`], `3` for [`Self::Cli`]. The declaration order of
+    /// [`Self::ALL`] (new kinds append, so recorded ordinals stay stable).
+    ///
+    /// **Not the fold precedence.** Which operator layer beats which inside
+    /// the [`crate::ConfigTierKind::Custom`] row of the progressive fold is
+    /// owned by the typed [`crate::OverlaySlot`] axis
+    /// (`file < config-override < env < cli`), never by this ordinal.
     ///
     /// Inherent `const`-callable mirror of the trait-uniform
     /// [`crate::axis_ordinal::<Self>`] free-function projection over
@@ -1022,11 +1078,12 @@ impl ConfigSourceKind {
             Self::Defaults => 0,
             Self::Env => 1,
             Self::File => 2,
+            Self::Cli => 3,
         }
     }
 
     /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
-    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..4` — the exact
     /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
     ///
     /// The bounded three-cell match delivers:
@@ -1034,6 +1091,7 @@ impl ConfigSourceKind {
     /// - `0` → [`Some`]`(`[`Self::Defaults`]`)`
     /// - `1` → [`Some`]`(`[`Self::Env`]`)`
     /// - `2` → [`Some`]`(`[`Self::File`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Cli`]`)`
     /// - `_` → [`None`]
     ///
     /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one
@@ -1067,7 +1125,7 @@ impl ConfigSourceKind {
     /// [`tests::config_source_kind_from_ordinal_round_trips_via_ordinal`].
     ///
     /// **Out-of-range rejection** —
-    /// `ConfigSourceKind::from_ordinal(o) == None` for every `o >= 3`. The
+    /// `ConfigSourceKind::from_ordinal(o) == None` for every `o >= 4`. The
     /// closed match's `_` arm forwards the out-of-range case to [`None`]
     /// structurally; the guard degrades gracefully on a caller passing
     /// a stale wire-format ordinal from a version-skewed peer or an
@@ -1088,10 +1146,9 @@ impl ConfigSourceKind {
     ///
     /// **Agreement with `Self::ALL` at every index** —
     /// `ConfigSourceKind::from_ordinal(i) == Some(Self::ALL[i])` for every
-    /// `i < 3`. The inherent match and the [`Self::ALL`] slice literal
-    /// carry the same declaration order — the provider-chain precedence
-    /// `Defaults → Env → File` (later overriding earlier) inside the
-    /// [`crate::ConfigTierKind::Custom`] row — so the test below pins the
+    /// `i < 4`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order (`Defaults → Env → File → Cli`)
+    /// — so the test below pins the
     /// pointwise agreement and a future edit that shifts one without the
     /// other fails at test time on the first drifted position. Pinned by
     /// [`tests::config_source_kind_from_ordinal_agrees_with_all_index_pointwise`].
@@ -1115,6 +1172,7 @@ impl ConfigSourceKind {
             0 => Some(Self::Defaults),
             1 => Some(Self::Env),
             2 => Some(Self::File),
+            3 => Some(Self::Cli),
             _ => None,
         }
     }
@@ -1129,6 +1187,7 @@ impl ConfigSourceKind {
     /// - `"defaults"` → [`Some`]`(`[`Self::Defaults`]`)`
     /// - `"env"`      → [`Some`]`(`[`Self::Env`]`)`
     /// - `"file"`     → [`Some`]`(`[`Self::File`]`)`
+    /// - `"cli"`      → [`Some`]`(`[`Self::Cli`]`)`
     /// - `_`          → [`None`]
     ///
     /// Sibling of [`Self::from_ordinal`] on the scalar-[`usize`] surface:
@@ -1189,7 +1248,7 @@ impl ConfigSourceKind {
     ///
     /// **Non-canonical rejection** —
     /// `ConfigSourceKind::from_str(s) == None` for every `s` outside the
-    /// canonical three-cell set `{"defaults", "env", "file"}`. The closed
+    /// canonical four-cell set `{"defaults", "env", "file", "cli"}`. The closed
     /// match's `_` arm forwards the off-surface case to [`None`]
     /// structurally; the guard degrades gracefully on a caller passing a
     /// stale wire-format label from a version-skewed peer, a mixed-case
@@ -1237,6 +1296,7 @@ impl ConfigSourceKind {
             b"defaults" => Some(Self::Defaults),
             b"env" => Some(Self::Env),
             b"file" => Some(Self::File),
+            b"cli" => Some(Self::Cli),
             _ => None,
         }
     }
@@ -1269,7 +1329,7 @@ closed_axis_label_string_surface! {
     type = ConfigSourceKind,
     parse_error = "unknown config source kind",
     expecting = "a canonical ConfigSourceKind lowercase label \
-                 (`defaults`, `env`, `file`; case-insensitive)",
+                 (`defaults`, `env`, `file`, `cli`; case-insensitive)",
 }
 
 /// Chain-level provenance queries over a recorded [`ConfigSource`] chain.
@@ -31688,6 +31748,8 @@ impl fmt::Display for ConfigSource {
             Self::Env(prefix) if prefix.is_empty() => f.write_str("env"),
             Self::Env(prefix) => write!(f, "env({prefix})"),
             Self::File(path) => write!(f, "file({})", path.display()),
+            Self::Cli(flag) if flag.is_empty() => f.write_str("cli"),
+            Self::Cli(flag) => write!(f, "cli({flag})"),
         }
     }
 }
@@ -32651,6 +32713,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover());
         assert_eq!(
@@ -32963,6 +33026,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover());
         assert!(axis_cover.as_slice().absent_layer_kinds().is_empty());
@@ -33100,6 +33164,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert_eq!(
             axis_cover.as_slice().present_layer_kinds_count(),
@@ -33177,12 +33242,13 @@ mod tests {
                 ConfigSourceKind::Defaults,
                 ConfigSourceKind::Env,
                 ConfigSourceKind::File,
+                ConfigSourceKind::Cli,
             ],
         );
     }
 
     #[test]
-    fn absent_layer_kinds_defaults_only_chain_is_env_and_file() {
+    fn absent_layer_kinds_defaults_only_chain_is_env_file_and_cli() {
         // A chain composed only of `Defaults` layers has exactly
         // { Env, File } as its coverage gap — the non-Defaults
         // subset of the axis is entirely absent. Operator-facing pin
@@ -33190,12 +33256,16 @@ mod tests {
         let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
         assert_eq!(
             defaults_only.as_slice().absent_layer_kinds(),
-            vec![ConfigSourceKind::Env, ConfigSourceKind::File],
+            vec![
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+                ConfigSourceKind::Cli,
+            ],
         );
     }
 
     #[test]
-    fn absent_layer_kinds_env_only_chain_is_defaults_and_file() {
+    fn absent_layer_kinds_env_only_chain_is_defaults_file_and_cli() {
         // A chain composed only of `Env` layers has exactly
         // { Defaults, File } as its coverage gap. Boundary pin on the
         // "env-only recipe" — e.g. a service reading only from
@@ -33207,12 +33277,16 @@ mod tests {
         ];
         assert_eq!(
             env_only.as_slice().absent_layer_kinds(),
-            vec![ConfigSourceKind::Defaults, ConfigSourceKind::File],
+            vec![
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::File,
+                ConfigSourceKind::Cli,
+            ],
         );
     }
 
     #[test]
-    fn absent_layer_kinds_file_only_chain_is_defaults_and_env() {
+    fn absent_layer_kinds_file_only_chain_is_defaults_env_and_cli() {
         // A chain composed only of `File` layers has exactly
         // { Defaults, Env } as its coverage gap. Boundary pin on the
         // "file-only recipe" — the coverage-gap iter emits in
@@ -33223,7 +33297,11 @@ mod tests {
         ];
         assert_eq!(
             files_only.as_slice().absent_layer_kinds(),
-            vec![ConfigSourceKind::Defaults, ConfigSourceKind::Env],
+            vec![
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::Cli,
+            ],
         );
     }
 
@@ -33322,6 +33400,7 @@ mod tests {
                 ConfigSource::Defaults,
                 ConfigSource::Env("APP_".to_owned()),
                 ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Cli("--set".to_owned()),
             ],
             vec![
                 ConfigSource::File(PathBuf::from("/a.yaml")),
@@ -33338,6 +33417,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert!(full_cover.as_slice().layer_kind_histogram().is_full_cover());
         assert_eq!(
@@ -33637,6 +33717,7 @@ mod tests {
                 ConfigSource::Defaults,
                 ConfigSource::Env("APP_".to_owned()),
                 ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Cli("--set".to_owned()),
             ],
             vec![
                 ConfigSource::File(PathBuf::from("/a.yaml")),
@@ -33656,6 +33737,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert!(full_cover.as_slice().layer_kind_histogram().is_full_cover());
         assert_eq!(full_cover.as_slice().absent_layer_kinds_count(), 0);
@@ -33835,19 +33917,20 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert_eq!(full_cover.as_slice().absent_layer_kinds_count(), 0);
     }
 
     #[test]
-    fn absent_layer_kinds_count_sample_chain_is_one() {
+    fn absent_layer_kinds_count_sample_chain_is_two() {
         // Direct fixture pin: `sample_chain` covers two of three layer
         // kinds (Env, File observed; Defaults absent), so the coverage-
         // gap scalar reads 1. Coverage-gap peer of
         // `present_layer_kinds_count_sample_chain_is_two` on the same
         // fixture and altitude.
         let chain = sample_chain();
-        assert_eq!(chain.as_slice().absent_layer_kinds_count(), 1);
+        assert_eq!(chain.as_slice().absent_layer_kinds_count(), 2);
     }
 
     #[test]
@@ -33892,6 +33975,7 @@ mod tests {
                 ConfigSource::Defaults,
                 ConfigSource::Env("APP_".to_owned()),
                 ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Cli("--set".to_owned()),
             ],
         ]
     }
@@ -33905,6 +33989,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ]
     }
 
@@ -34000,7 +34085,7 @@ mod tests {
         // Direct fixture pin: `sample_chain` carries two File + one
         // Env, so the coverage gap is exactly {Defaults} and the
         // (only) absent kind is Defaults. Head-projection peer of
-        // `absent_layer_kinds_defaults_only_chain_is_env_and_file` on
+        // `absent_layer_kinds_defaults_only_chain_is_env_file_and_cli` on
         // the counterpart chain shape, and chain-altitude peer of
         // `first_absent_tier_prog_fixture_is_custom` one altitude up.
         let chain = sample_chain();
@@ -42850,6 +42935,7 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         let hist = slice.layer_kind_histogram();
@@ -43123,6 +43209,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Defaults,
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         let hist = slice.layer_kind_histogram();
@@ -43238,6 +43325,8 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
         ];
         let slice = chain.as_slice();
         let hist = slice.layer_kind_histogram();
@@ -43469,6 +43558,7 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kind_histogram().is_full_cover());
@@ -43771,6 +43861,8 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kind_histogram().is_full_cover());
@@ -43979,6 +44071,8 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kind_histogram().is_full_cover());
@@ -46747,7 +46841,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kind_peak_multiplicity_uniform_full_cover_is_three() {
+    fn layer_kind_peak_multiplicity_uniform_full_cover_is_four() {
         // Uniform full-cover pin: every observed kind contributes the
         // same nonzero count, so all three cells tie at the peak.
         // Multiplicity reads `3` = axis cardinality of ConfigSourceKind
@@ -46760,10 +46854,11 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
-        assert_eq!(slice.layer_kind_peak_multiplicity(), 3);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 4);
         assert_eq!(
             slice.layer_kind_peak_multiplicity(),
             crate::axis_cardinality::<ConfigSourceKind>()
@@ -47123,7 +47218,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kind_trough_multiplicity_uniform_full_cover_is_three() {
+    fn layer_kind_trough_multiplicity_uniform_full_cover_is_four() {
         // Uniform full-cover pin: every observed kind contributes the
         // same nonzero count, so all three cells tie at the trough
         // (and simultaneously at the peak). Multiplicity reads `3` =
@@ -47137,10 +47232,11 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
-        assert_eq!(slice.layer_kind_trough_multiplicity(), 3);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 4);
         assert_eq!(
             slice.layer_kind_trough_multiplicity(),
             crate::axis_cardinality::<ConfigSourceKind>()
@@ -47589,12 +47685,13 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
-        assert_eq!(slice.layer_kind_peak_multiplicity(), 3);
-        assert_eq!(slice.layer_kind_trough_multiplicity(), 3);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 4);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 4);
         assert_eq!(slice.layer_kind_modality_amplitude(), 0);
     }
 
@@ -47612,6 +47709,9 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Defaults,
         ];
@@ -47637,8 +47737,12 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Defaults,
         ];
         let slice = chain.as_slice();
@@ -47996,7 +48100,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kind_modality_degree_sum_uniform_full_cover_is_six() {
+    fn layer_kind_modality_degree_sum_uniform_full_cover_is_eight() {
         // Uniform full-cover pin: every ConfigSourceKind cell
         // contributes exactly one layer, so all three cells tie at
         // both the peak and the trough. Both multiplicities read `3`
@@ -48015,13 +48119,14 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
-        assert_eq!(slice.layer_kind_peak_multiplicity(), 3);
-        assert_eq!(slice.layer_kind_trough_multiplicity(), 3);
-        assert_eq!(slice.layer_kind_modality_degree_sum(), 6);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 4);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 4);
+        assert_eq!(slice.layer_kind_modality_degree_sum(), 8);
         assert_eq!(
             slice.layer_kind_modality_degree_sum(),
             2 * slice.present_layer_kinds_count(),
@@ -48046,6 +48151,9 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Defaults,
         ];
@@ -48071,8 +48179,12 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Defaults,
         ];
         let slice = chain.as_slice();
@@ -48505,7 +48617,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kind_modality_degree_uniform_full_cover_is_three_three_pair() {
+    fn layer_kind_modality_degree_uniform_full_cover_is_four_four_pair() {
         // Uniform full-cover polarity pin: every ConfigSourceKind cell
         // contributes exactly one layer, so all three cells tie at both
         // the peak and the trough. Both multiplicities read `3` (= axis
@@ -48520,15 +48632,16 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
-        assert_eq!(slice.layer_kind_modality_degree(), (3, 3));
+        assert_eq!(slice.layer_kind_modality_degree(), (4, 4));
     }
 
     #[test]
-    fn layer_kind_modality_degree_heavy_tail_three_cell_fixture_is_one_two_pair() {
+    fn layer_kind_modality_degree_heavy_tail_four_cell_fixture_is_one_two_pair() {
         // Heavy-tail three-cell polarity pin: `File ×2 + Env ×1 +
         // Defaults ×1` → peak_count=2 (unique at File), trough_count=1
         // (tied at Env and Defaults). peak_mult=1, trough_mult=2, so
@@ -48542,6 +48655,9 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Defaults,
         ];
@@ -48551,7 +48667,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kind_modality_degree_right_skew_three_cell_fixture_is_two_one_pair() {
+    fn layer_kind_modality_degree_right_skew_four_cell_fixture_is_two_one_pair() {
         // Right-skew three-cell polarity pin: `File ×2 + Env ×2 +
         // Defaults ×1` → peak_count=2 (tied at File and Env),
         // trough_count=1 (unique at Defaults). peak_mult=2, trough_mult=1,
@@ -48566,8 +48682,12 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
             ConfigSource::Defaults,
         ];
         let slice = chain.as_slice();
@@ -48962,6 +49082,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_balanced());
@@ -49449,6 +49570,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_balanced());
@@ -49786,6 +49908,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let full_cover_slice = full_cover.as_slice();
         assert!(full_cover_slice.layer_kinds_balanced());
@@ -50567,6 +50690,8 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
+            ConfigSource::Cli("flags".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kind_histogram().is_full_cover());
@@ -50906,6 +51031,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kind_histogram().is_full_cover());
@@ -50943,6 +51069,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
             ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert_eq!(slice.peak_layer_kind_count(), 3);
@@ -51238,6 +51365,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -51262,6 +51390,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.yaml")),
             ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -51283,6 +51412,7 @@ mod tests {
             ConfigSource::Env("OTHER_".to_owned()),
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -51571,6 +51701,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_any_observed());
@@ -51839,6 +51970,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(!slice.layer_kinds_singular_support());
@@ -52200,7 +52332,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_singular_gap_two_kind_partial_cover_is_true() {
+    fn layer_kinds_singular_gap_three_kind_partial_cover_is_true() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // (support size 2 out of 3, missing {Defaults}) —
         // `layer_kinds_singular_gap` reads `true`. The row this
@@ -52211,9 +52343,12 @@ mod tests {
         // same fixture. Peer of
         // `tiers_singular_gap_three_tier_partial_cover_is_true` on
         // the tier altitude.
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert_eq!(slice.absent_layer_kinds().len(), 1);
         assert!(slice.layer_kinds_singular_gap());
         assert!(slice.layer_kinds_any_observed());
@@ -52237,6 +52372,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(!slice.layer_kinds_singular_gap());
@@ -52525,30 +52661,26 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strict_partial_cover_chain_altitude_is_vacuously_false_pointwise() {
-        // Cardinality-conditional reachability pin at the chain layer-
-        // kind sub-axis: `!layer_kinds_strict_partial_cover()` on every
-        // chain fixture. `ConfigSourceKind` carries three cells, so the
-        // strict interval `[2, cardinality - 2] = [2, 1]` on the
-        // support-cardinality scalar is empty — no chain can observe
-        // `>= 2` cells AND leave `>= 2` cells unobserved simultaneously.
-        // Trait-uniform pin of the lift's vacuously-`false` polarity at
-        // the chain layer-kind sub-axis, matching
-        // `AxisHistogram::has_strict_partial_cover`'s cardinality-`3`
-        // scan one altitude down and the diff-altitude peer
-        // `kinds_strict_partial_cover_diff_altitude_is_vacuously_false_pointwise`
-        // (also on cardinality `3`). Distinguishes this chain sub-axis
-        // from the tier altitude and the chain file-format sub-axis,
-        // where cardinality `>= 4` opens a strict-interior witness.
+    fn layer_kinds_strict_partial_cover_chain_altitude_fires_exactly_on_two_present_kinds_pointwise()
+     {
+        // Cardinality-4 axis (Defaults / Env / File / Cli): the strict
+        // interior is exactly "two kinds present, two absent". Before
+        // `Cli` landed the axis had cardinality 3 and this boolean was
+        // vacuously false on every chain; it is now reachable, and
+        // sample_chain() (File + Env) reaches it.
+        let mut fired = false;
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert!(
-                !slice.layer_kinds_strict_partial_cover(),
-                "layer_kinds_strict_partial_cover must read false on every \
-                 ConfigSourceKind (cardinality-3) chain — the strict interior \
-                 is unreachable on cardinality-`<= 3` axes",
+            let two_present = slice.present_layer_kinds().len() == 2;
+            assert_eq!(
+                slice.layer_kinds_strict_partial_cover(),
+                two_present,
+                "layer_kinds_strict_partial_cover must fire exactly on the \
+                 two-of-four cover of the cardinality-4 ConfigSourceKind axis",
             );
+            fired |= two_present;
         }
+        assert!(fired, "the fixture table must exercise the strict interior");
     }
 
     #[test]
@@ -52597,7 +52729,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strict_partial_cover_two_kind_partial_cover_is_false() {
+    fn layer_kinds_strict_partial_cover_three_kind_partial_cover_is_false() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // (support size 2 out of 3, missing {Defaults}) — the coverage
         // gap is `1` (not `>= 2`), so the "at least two unobserved"
@@ -52611,12 +52743,41 @@ mod tests {
         // partial cover falls on the strict interior (cardinality-`4`
         // reachability opens a strict-interior witness at support
         // cardinality `2`).
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert_eq!(slice.absent_layer_kinds().len(), 1);
         assert!(slice.layer_kinds_singular_gap());
         assert!(!slice.layer_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_two_kind_partial_cover_is_true() {
+        // With `ConfigSourceKind::Cli` the layer-kind axis has cardinality
+        // 4, so the strict interior (two present, two absent) is reachable:
+        // sample_chain() observes exactly File + Env.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.absent_layer_kinds().len(), 2);
+        assert!(slice.layer_kinds_strict_partial_cover());
+        assert!(!slice.layer_kinds_singular_gap());
+        assert!(!slice.layer_kinds_singular());
+        assert_eq!(
+            slice.layer_kinds_support_boundary_distance(),
+            crate::SupportBoundaryDistance::StrictInterior,
+        );
+        assert_eq!(
+            slice.layer_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::StrictInterior,
+        );
+        assert_eq!(
+            slice.layer_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
     }
 
     #[test]
@@ -52634,6 +52795,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -52984,7 +53146,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_low_support_two_kind_partial_cover_is_false() {
+    fn layer_kinds_low_support_three_kind_partial_cover_is_false() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // (support size 2 out of 3) — support cardinality `2`
         // violates `<= 1`, so `layer_kinds_low_support` reads
@@ -52994,9 +53156,12 @@ mod tests {
         // sits at support cardinality `axis_cardinality - 1 = 2`.
         // Peer of `kinds_low_support_two_kind_partial_cover_is_false`
         // on the diff altitude.
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert!(slice.layer_kinds_singular_gap());
         assert!(!slice.layer_kinds_low_support());
     }
@@ -53016,6 +53181,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -53374,7 +53540,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_high_support_two_kind_partial_cover_is_true() {
+    fn layer_kinds_high_support_three_kind_partial_cover_is_true() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // (support size 2 out of 3) — `layer_kinds_singular_gap`
         // fires (one unobserved cell on the cardinality-`3` axis)
@@ -53392,9 +53558,12 @@ mod tests {
         // `kinds_high_support_two_kind_partial_cover_is_true` on
         // the diff altitude — the singleton-gap fixture on the
         // respective cardinality-`3` axis.
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert!(slice.layer_kinds_singular_gap());
         assert!(slice.layer_kinds_high_support());
     }
@@ -53421,6 +53590,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -53685,7 +53855,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_singular_agrees_with_any_observed_and_not_full_cover_on_cardinality_three_pointwise()
+    fn layer_kinds_singular_agrees_with_any_observed_and_not_full_cover_nor_interior_on_cardinality_four_pointwise()
      {
         // Partial-cover-minus-strict-interior form reduced on the
         // cardinality-`3` layer-kind axis: `layer_kinds_singular() ==
@@ -53703,11 +53873,16 @@ mod tests {
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
             let via_seam = slice.layer_kinds_singular();
-            let via_slice = slice.layer_kinds_any_observed() && !slice.layer_kinds_full_cover();
+            // Cardinality-4 axis: "singular" is one-present OR one-absent,
+            // i.e. observed, not full, and not the two-of-four interior.
+            let via_slice = slice.layer_kinds_any_observed()
+                && !slice.layer_kinds_full_cover()
+                && !slice.layer_kinds_strict_partial_cover();
             assert_eq!(
                 via_seam, via_slice,
                 "layer_kinds_singular ({via_seam}) must agree with \
-                 layer_kinds_any_observed && !layer_kinds_full_cover ({via_slice})",
+                 layer_kinds_any_observed && !layer_kinds_full_cover && \
+                 !layer_kinds_strict_partial_cover ({via_slice})",
             );
         }
     }
@@ -53821,7 +53996,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_singular_two_kind_partial_cover_is_true() {
+    fn layer_kinds_singular_three_kind_partial_cover_is_true() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // (support size 2 out of 3) — the support cardinality is `2`
         // = `axis_cardinality - 1`, exactly the singleton-gap
@@ -53838,9 +54013,12 @@ mod tests {
         // false` via the strict-interior disjointness. Peer of
         // `kinds_singular_two_kind_partial_cover_is_true` on the diff
         // altitude at the same cardinality-`3` singleton-gap fixture.
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert!(slice.layer_kinds_singular_gap());
         assert!(slice.layer_kinds_singular());
     }
@@ -53863,6 +54041,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -54257,7 +54436,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_boundary_two_kind_partial_cover_is_false() {
+    fn layer_kinds_boundary_three_kind_partial_cover_is_false() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // — the support cardinality is `2` (two nonzeros and one
         // zero on the cardinality-`3` axis), exactly the singleton-
@@ -54270,9 +54449,12 @@ mod tests {
         // ternary. Peer of `tiers_boundary_three_tier_partial_cover_is_false`
         // on the tier altitude (analog fixture at the singleton-gap
         // boundary on the cardinality-`4` tier axis).
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert!(!slice.layer_kinds_boundary());
         assert!(slice.layer_kinds_singular_gap());
     }
@@ -54293,6 +54475,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -54729,7 +54912,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_partial_cover_two_kind_partial_cover_is_true() {
+    fn layer_kinds_partial_cover_three_kind_partial_cover_is_true() {
         // Two-kind-cover pin: `sample_chain()` observes {Env, File}
         // — the support cardinality is `2` (two nonzeros and one
         // zero on the cardinality-`3` axis), exactly the singleton-
@@ -54744,9 +54927,12 @@ mod tests {
         // on the tier altitude in the same shape (the analog
         // fixture on the cardinality-`4` tier axis is the three-
         // tier cover, which also lands on `singular_gap`).
-        let chain = sample_chain();
+        // sample_chain() observes File + Env; adding Defaults leaves only
+        // Cli absent — the single-gap (three-of-four) partial cover.
+        let mut chain = sample_chain();
+        chain.push(ConfigSource::Defaults);
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert!(slice.layer_kinds_partial_cover());
         assert!(slice.layer_kinds_singular_gap());
     }
@@ -54769,6 +54955,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -55207,7 +55394,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_modally_tied_uniform_three_kind_cover_is_true() {
+    fn layer_kinds_modally_tied_uniform_four_kind_cover_is_true() {
         // Uniform axis-cover pin: a chain observing every cell of
         // `ConfigSourceKind` exactly once has three observed cells
         // tied at count `1` — `peak_multiplicity` reads `3` and the
@@ -55220,9 +55407,10 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 3);
+        assert_eq!(slice.present_layer_kinds().len(), 4);
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
         assert!(slice.layer_kinds_modally_tied());
@@ -55558,7 +55746,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_antimodally_tied_uniform_three_kind_cover_is_true() {
+    fn layer_kinds_antimodally_tied_uniform_four_kind_cover_is_true() {
         // Uniform axis-cover pin: a chain observing every cell of
         // `ConfigSourceKind` exactly once has three observed cells
         // tied at count `1` — `trough_multiplicity` reads `3` and the
@@ -55572,9 +55760,10 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 3);
+        assert_eq!(slice.present_layer_kinds().len(), 4);
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
         assert!(slice.layer_kinds_antimodally_tied());
@@ -55951,7 +56140,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strictly_modally_unique_uniform_three_kind_cover_is_false() {
+    fn layer_kinds_strictly_modally_unique_uniform_four_kind_cover_is_false() {
         // Uniform axis-cover pin: a chain observing every cell of
         // `ConfigSourceKind` exactly once has three observed cells
         // tied at count `1` — `peak_multiplicity` reads `3` and the
@@ -55970,9 +56159,10 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 3);
+        assert_eq!(slice.present_layer_kinds().len(), 4);
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
         assert!(!slice.layer_kinds_strictly_modally_unique());
@@ -56310,7 +56500,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strictly_antimodally_unique_uniform_three_kind_cover_is_false() {
+    fn layer_kinds_strictly_antimodally_unique_uniform_four_kind_cover_is_false() {
         // Uniform axis-cover pin: a chain observing every cell of
         // `ConfigSourceKind` exactly once has three observed cells tied
         // at count `1` — `trough_multiplicity` reads `3` and the
@@ -56328,9 +56518,10 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 3);
+        assert_eq!(slice.present_layer_kinds().len(), 4);
         assert!(slice.layer_kinds_full_cover());
         assert!(slice.layer_kinds_balanced());
         assert!(!slice.layer_kinds_strictly_antimodally_unique());
@@ -56675,6 +56866,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -57076,7 +57268,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_cardinality_class_two_kind_partial_cover_is_singular_gap_variant() {
+    fn layer_kinds_support_cardinality_class_three_kind_partial_cover_is_singular_gap_variant() {
         // Two-kind partial-cover pin on the cardinality-`3` layer-kind
         // sub-axis: a chain with exactly two observed cells (`Defaults`
         // + `File`) has one unobserved cell (`Env`) — `distinct_cells`
@@ -57090,10 +57282,11 @@ mod tests {
         // on the diff altitude at the same axis-cardinality.
         let chain = vec![
             ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert_eq!(slice.absent_layer_kinds().len(), 1);
         assert!(slice.layer_kinds_singular_gap());
         assert_eq!(
@@ -57119,6 +57312,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -57347,36 +57541,25 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_cardinality_class_is_strict_partial_cover_pointwise()
+    fn layer_kinds_strict_partial_cover_implies_layer_kinds_support_cardinality_class_is_strict_partial_cover_pointwise()
      {
-        // Vacuous-strict-interior subsumption pin — vacuously true on
-        // the cardinality-`3` ConfigSourceKind axis:
-        // `layer_kinds_strict_partial_cover() ⇒
-        // layer_kinds_support_cardinality_class() ==
-        // SupportCardinalityClass::StrictPartialCover`. The premise
-        // never fires on the cardinality-`3` layer-kind sub-axis (the
-        // strict interval `[2, 1]` is empty), so the subsumption is
-        // vacuously true. Matches the shared vacuous-strict-interior
-        // convention with the cardinality-`3` diff-altitude peer;
-        // reachability strictly advances one altitude up on the
-        // cardinality-`4` tier axis where the subsumption becomes an
-        // inhabited constraint (see
-        // `tiers_strict_partial_cover_implies_tiers_support_cardinality_class_is_strict_partial_cover_pointwise`).
+        // Non-vacuous since `Cli` made the layer-kind axis cardinality 4:
+        // the strict interior is reachable, and the fixture table reaches it.
+        let mut fired = 0usize;
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert!(
-                !slice.layer_kinds_strict_partial_cover(),
-                "cardinality-3 layer-kind sub-axis has vacuous strict \
-                 interior — no fixture should fire the strict-partial-\
-                 cover boolean",
-            );
             if slice.layer_kinds_strict_partial_cover() {
+                fired += 1;
                 assert_eq!(
                     slice.layer_kinds_support_cardinality_class(),
                     crate::SupportCardinalityClass::StrictPartialCover,
                 );
             }
         }
+        assert!(
+            fired > 0,
+            "the fixture table must exercise the strict interior"
+        );
     }
 
     #[test]
@@ -57583,7 +57766,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_boundary_distance_two_kind_partial_cover_is_singular_variant() {
+    fn layer_kinds_support_boundary_distance_three_kind_partial_cover_is_singular_variant() {
         // Two-kind partial-cover pin on the cardinality-`3` layer-kind
         // sub-axis: a chain with exactly two observed cells (`Defaults`
         // + `File`) has one unobserved cell (`Env`) — `distinct_cells`
@@ -57600,10 +57783,11 @@ mod tests {
         // on the diff altitude at the same axis-cardinality.
         let chain = vec![
             ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert_eq!(slice.absent_layer_kinds().len(), 1);
         assert!(slice.layer_kinds_singular_gap());
         assert_eq!(
@@ -57633,6 +57817,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -57814,36 +57999,25 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_boundary_distance_is_strict_interior_pointwise()
+    fn layer_kinds_strict_partial_cover_implies_layer_kinds_support_boundary_distance_is_strict_interior_pointwise()
      {
-        // Vacuous-strict-interior subsumption pin — vacuously true on
-        // the cardinality-`3` ConfigSourceKind axis:
-        // `layer_kinds_strict_partial_cover() ⇒
-        // layer_kinds_support_boundary_distance() ==
-        // SupportBoundaryDistance::StrictInterior`. The premise never
-        // fires on the cardinality-`3` layer-kind sub-axis (the strict
-        // interval `[2, 1]` is empty), so the subsumption is vacuously
-        // true. Matches the shared vacuous-strict-interior convention
-        // with the cardinality-`3` diff-altitude peer; reachability
-        // strictly advances one altitude up on the cardinality-`4`
-        // tier axis where the subsumption becomes an inhabited
-        // constraint (see
-        // `tiers_strict_partial_cover_implies_tiers_support_boundary_distance_is_strict_interior_pointwise`).
+        // Non-vacuous since `Cli` made the layer-kind axis cardinality 4:
+        // the strict interior is reachable, and the fixture table reaches it.
+        let mut fired = 0usize;
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert!(
-                !slice.layer_kinds_strict_partial_cover(),
-                "cardinality-3 layer-kind sub-axis has vacuous strict \
-                 interior — no fixture should fire the strict-partial-\
-                 cover boolean",
-            );
             if slice.layer_kinds_strict_partial_cover() {
+                fired += 1;
                 assert_eq!(
                     slice.layer_kinds_support_boundary_distance(),
                     crate::SupportBoundaryDistance::StrictInterior,
                 );
             }
         }
+        assert!(
+            fired > 0,
+            "the fixture table must exercise the strict interior"
+        );
     }
 
     #[test]
@@ -57905,34 +58079,20 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior() {
-        // **Cardinality-`3` strict-interior vacuous-unreachability
-        // signature pin** — the direct mirror of the cardinality-`3`
-        // diff-altitude signature pin
-        // `kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`.
-        // On the three-cell ConfigSourceKind axis, the `StrictInterior`
-        // bucket is **vacuously unreachable**: the underlying strict-
-        // partial-cover corner is itself vacuous (the strict interval
-        // `[2, cardinality - 2] = [2, 1]` is empty), so no chain over
-        // ConfigSourceKind can inhabit it. Structural signature of the
-        // chain layer-kind sub-axis in the 5-column grid to be closed
-        // on this projection — the direct dual of the cardinality-`4`
-        // tier-altitude signature pin
-        // `tiers_support_boundary_distance_cardinality_4_axis_reaches_strict_interior_variant`.
-        // Covers every fixture in the reused set; a future refactor
-        // that accidentally routes a cardinality-`3` chain to the
-        // strict-interior bucket fails visibly.
+    fn layer_kinds_support_boundary_distance_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds()
+     {
+        // Cardinality-4 ConfigSourceKind axis: the StrictInterior bucket is
+        // inhabited exactly by the two-of-four covers (it was vacuous while
+        // the axis had cardinality 3, before `Cli`).
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert_ne!(
-                slice.layer_kinds_support_boundary_distance(),
-                crate::SupportBoundaryDistance::StrictInterior,
-                "cardinality-3 ConfigSourceKind axis has vacuous strict \
-                 interior — no chain must land on the StrictInterior \
-                 bucket",
+            assert_eq!(
+                slice.layer_kinds_support_boundary_distance()
+                    == crate::SupportBoundaryDistance::StrictInterior,
+                slice.present_layer_kinds().len() == 2,
+                "StrictInterior must be inhabited exactly by two-of-four covers",
             );
         }
-        // Also cover the empty-chain edge specifically.
         let empty: [ConfigSource; 0] = [];
         assert_ne!(
             empty.layer_kinds_support_boundary_distance(),
@@ -58073,7 +58233,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_magnitude_direction_two_kind_partial_cover_is_high_variant() {
+    fn layer_kinds_support_magnitude_direction_three_kind_partial_cover_is_high_variant() {
         // Two-kind partial-cover pin on the cardinality-`3` layer-kind
         // sub-axis: a chain with exactly two observed cells (`Defaults`
         // + `File`) has one unobserved cell (`Env`) — `distinct_cells`
@@ -58089,15 +58249,16 @@ mod tests {
         // `kinds_support_magnitude_direction_two_kind_partial_cover_is_high_variant`
         // on the diff altitude at the same axis-cardinality. Transposes
         // the sibling
-        // `layer_kinds_support_boundary_distance_two_kind_partial_cover_is_singular_variant`
+        // `layer_kinds_support_boundary_distance_three_kind_partial_cover_is_singular_variant`
         // outcome (Singular) into High under the orthogonal magnitude-
         // direction quotient of the four non-interior corners.
         let chain = vec![
             ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.present_layer_kinds().len(), 3);
         assert_eq!(slice.absent_layer_kinds().len(), 1);
         assert!(slice.layer_kinds_singular_gap());
         assert_eq!(
@@ -58127,6 +58288,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         let slice = chain.as_slice();
         assert!(slice.layer_kinds_full_cover());
@@ -58322,35 +58484,25 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_magnitude_direction_is_strict_interior_pointwise()
+    fn layer_kinds_strict_partial_cover_implies_layer_kinds_support_magnitude_direction_is_strict_interior_pointwise()
      {
-        // Vacuous-strict-interior subsumption pin — vacuously true on
-        // the cardinality-`3` ConfigSourceKind axis:
-        // `layer_kinds_strict_partial_cover() ⇒
-        // layer_kinds_support_magnitude_direction() ==
-        // SupportMagnitudeDirection::StrictInterior`. The premise
-        // never fires on the cardinality-`3` layer-kind sub-axis (the
-        // strict interval `[2, 1]` is empty), so the subsumption is
-        // vacuously true. Matches the shared vacuous-strict-interior
-        // convention with the cardinality-`3` diff-altitude peer;
-        // reachability strictly advances one altitude up on the
-        // cardinality-`4` tier axis where the subsumption becomes an
-        // inhabited constraint.
+        // Non-vacuous since `Cli` made the layer-kind axis cardinality 4:
+        // the strict interior is reachable, and the fixture table reaches it.
+        let mut fired = 0usize;
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert!(
-                !slice.layer_kinds_strict_partial_cover(),
-                "cardinality-3 layer-kind sub-axis has vacuous strict \
-                 interior — no fixture should fire the strict-partial-\
-                 cover boolean",
-            );
             if slice.layer_kinds_strict_partial_cover() {
+                fired += 1;
                 assert_eq!(
                     slice.layer_kinds_support_magnitude_direction(),
                     crate::SupportMagnitudeDirection::StrictInterior,
                 );
             }
         }
+        assert!(
+            fired > 0,
+            "the fixture table must exercise the strict interior"
+        );
     }
 
     #[test]
@@ -58405,35 +58557,20 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior() {
-        // **Cardinality-`3` strict-interior vacuous-unreachability
-        // signature pin** — the direct mirror of the cardinality-`3`
-        // diff-altitude signature pin and of the sibling
-        // `layer_kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`
-        // on the same shared middle leg. On the three-cell
-        // ConfigSourceKind axis, the `StrictInterior` bucket is
-        // **vacuously unreachable**: the underlying strict-partial-
-        // cover corner is itself vacuous (the strict interval `[2,
-        // cardinality - 2] = [2, 1]` is empty), so no chain over
-        // ConfigSourceKind can inhabit it. Structural signature of the
-        // chain layer-kind sub-axis in the 5-column grid to be closed
-        // on this projection — the direct dual of the cardinality-`4`
-        // tier-altitude signature pin
-        // `tiers_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_variant`.
-        // Covers every fixture in the reused set; a future refactor
-        // that accidentally routes a cardinality-`3` chain to the
-        // strict-interior bucket fails visibly.
+    fn layer_kinds_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds()
+     {
+        // Cardinality-4 ConfigSourceKind axis: the StrictInterior bucket is
+        // inhabited exactly by the two-of-four covers (it was vacuous while
+        // the axis had cardinality 3, before `Cli`).
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
-            assert_ne!(
-                slice.layer_kinds_support_magnitude_direction(),
-                crate::SupportMagnitudeDirection::StrictInterior,
-                "cardinality-3 ConfigSourceKind axis has vacuous strict \
-                 interior — no chain must land on the StrictInterior \
-                 bucket",
+            assert_eq!(
+                slice.layer_kinds_support_magnitude_direction()
+                    == crate::SupportMagnitudeDirection::StrictInterior,
+                slice.present_layer_kinds().len() == 2,
+                "StrictInterior must be inhabited exactly by two-of-four covers",
             );
         }
-        // Also cover the empty-chain edge specifically.
         let empty: [ConfigSource; 0] = [];
         assert_ne!(
             empty.layer_kinds_support_magnitude_direction(),
@@ -58442,7 +58579,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_kinds_support_magnitude_direction_cardinality_3_axis_two_bucket_profile_transposes_sibling_boundary_distance_pointwise()
+    fn layer_kinds_support_magnitude_direction_cardinality_4_axis_off_interior_profile_transposes_sibling_boundary_distance_pointwise()
      {
         // **Cardinality-`3` two-bucket transposed-profile pin** — the
         // classifier only inhabits `{Low, High}` on the cardinality-`3`
@@ -58461,15 +58598,29 @@ mod tests {
         // orthogonality of the two ternary partitions on the four non-
         // interior corners at every consumer site that reaches for
         // either two-bucket profile on the cardinality-`3` axis.
+        // Cardinality-4 axis: the two-of-four covers sit in the shared
+        // StrictInterior bucket on BOTH axes; every other chain inhabits
+        // the two-bucket transposition profile below.
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
+            if slice.layer_kinds_strict_partial_cover() {
+                assert_eq!(
+                    slice.layer_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::StrictInterior,
+                );
+                assert_eq!(
+                    slice.layer_kinds_support_boundary_distance(),
+                    crate::SupportBoundaryDistance::StrictInterior,
+                );
+                continue;
+            }
             let mag = slice.layer_kinds_support_magnitude_direction();
             assert!(
                 matches!(
                     mag,
                     crate::SupportMagnitudeDirection::Low | crate::SupportMagnitudeDirection::High
                 ),
-                "cardinality-3 axis must inhabit only Low or High \
+                "off the strict interior the axis must inhabit only Low or High \
                  (bucket={mag:?})",
             );
             let bnd = slice.layer_kinds_support_boundary_distance();
@@ -58479,7 +58630,7 @@ mod tests {
                     crate::SupportBoundaryDistance::Boundary
                         | crate::SupportBoundaryDistance::Singular
                 ),
-                "cardinality-3 axis must inhabit only Boundary or \
+                "off the strict interior the axis must inhabit only Boundary or \
                  Singular (bucket={bnd:?})",
             );
             // Transposition on the four non-interior corners of the
@@ -58502,7 +58653,7 @@ mod tests {
             assert_eq!(
                 mag.is_low() == bnd.is_boundary(),
                 !slice.layer_kinds_any_observed() || slice.layer_kinds_singular_gap(),
-                "on the cardinality-3 axis, `is_low == is_boundary` \
+                "off the strict interior, `is_low == is_boundary` \
                  coincides exactly on the Empty and SingularGap \
                  corners of the orthogonal transposition",
             );
@@ -63604,7 +63755,7 @@ mod tests {
         // `tier_modality_degree_sum_uniform_full_cover_is_eight` on
         // the tier altitude at the same cardinality-`4` axis. The
         // sister layer-kind sub-axis
-        // (`layer_kind_modality_degree_sum_uniform_full_cover_is_six`)
+        // (`layer_kind_modality_degree_sum_uniform_full_cover_is_eight`)
         // caps at `6` on its cardinality-`3` uniform-cover shape — one
         // strict advance in favour of this sub-axis. Also witnesses
         // `file_formats_balanced() ⇔ sum == 2 *
@@ -64217,7 +64368,7 @@ mod tests {
         // and Lisp). peak_mult=1, trough_mult=2. Fused pair reads
         // `(1, 2)` — the strictly-unimodal-antimodally-tied corner on
         // a three-cell partial-cover shape. Peer of
-        // `layer_kind_modality_degree_heavy_tail_three_cell_fixture_is_one_two_pair`
+        // `layer_kind_modality_degree_heavy_tail_four_cell_fixture_is_one_two_pair`
         // on the sister sub-axis on the same shape family (where the
         // three-cell layer-kind axis reaches the same `(1, 2)` on its
         // full cover).
@@ -64243,7 +64394,7 @@ mod tests {
         // cell pin above — together they pin both signed branches of
         // the fused pair at the one-magnitude asymmetry on a three-
         // cell shape. Peer of
-        // `layer_kind_modality_degree_right_skew_three_cell_fixture_is_two_one_pair`
+        // `layer_kind_modality_degree_right_skew_four_cell_fixture_is_two_one_pair`
         // on the sister sub-axis on the same shape family.
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
@@ -68634,7 +68785,7 @@ mod tests {
         // ⇒ file_formats_any_observed` and the disjointness
         // `file_formats_singular_gap ⇒ !file_formats_full_cover` on
         // the same fixture. Peer of
-        // `layer_kinds_singular_gap_two_kind_partial_cover_is_true` on
+        // `layer_kinds_singular_gap_three_kind_partial_cover_is_true` on
         // the layer-kind sub-axis one sub-axis over (a cardinality-3
         // axis whose singleton-gap boundary lands on support size 2).
         let chain = vec![
@@ -69065,7 +69216,7 @@ mod tests {
         // boundary at support cardinality `2`. `file_formats_strict_partial_cover`
         // reads `true` on this fixture. Cross-sub-axis divergence pin
         // against
-        // `layer_kinds_strict_partial_cover_two_kind_partial_cover_is_false`
+        // `layer_kinds_strict_partial_cover_three_kind_partial_cover_is_false`
         // (cardinality-`3` axis where the two-kind partial cover reads
         // `false` because the coverage gap is `1`, not `>= 2`). Peer of
         // `tiers_strict_partial_cover_two_tier_partial_cover_is_true` on
@@ -69567,7 +69718,7 @@ mod tests {
         // !file_formats_low_support` — unavailable at the
         // cardinality-`3` layer-kind sub-axis where the strict-
         // interior antecedent is vacuous. Peer of
-        // `layer_kinds_low_support_two_kind_partial_cover_is_false`
+        // `layer_kinds_low_support_three_kind_partial_cover_is_false`
         // on the layer-kind sub-axis (which reads through
         // `layer_kinds_singular_gap ⇒ !layer_kinds_low_support`
         // instead — the same fixture cardinality `2` sits on the
@@ -70083,7 +70234,7 @@ mod tests {
         // `file_formats_singular_gap ⇒ file_formats_high_support`
         // on the cardinality-`>= 3` axis where the dual-singular-
         // collapse never fires. Peer of
-        // `layer_kinds_high_support_two_kind_partial_cover_is_true`
+        // `layer_kinds_high_support_three_kind_partial_cover_is_true`
         // on the layer-kind sub-axis (which reads through the
         // singleton-gap subsumption at support cardinality `2` on
         // the cardinality-`3` axis — the same subsumption on
@@ -75938,7 +76089,7 @@ mod tests {
         // grid to be closed on this projection — the direct dual of
         // the cardinality-`3` sister-sub-axis vacuous-unreachability
         // signature pin
-        // `layer_kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`
+        // `layer_kinds_support_boundary_distance_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds`
         // and the cardinality-`3` diff-altitude signature pin
         // `kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`;
         // peer of the tier-altitude cardinality-`4` signature pin
@@ -76593,7 +76744,7 @@ mod tests {
         // grid to be closed on this projection — the direct dual of
         // the cardinality-`3` sister-sub-axis vacuous-unreachability
         // signature pin
-        // `layer_kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`
+        // `layer_kinds_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds`
         // and the cardinality-`3` diff-altitude signature pin
         // `kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`;
         // peer of the tier-altitude cardinality-`4` signature pin
@@ -79711,7 +79862,7 @@ mod tests {
         // vacuously true. Matches the shared vacuous-strict-interior
         // convention with the cardinality-`3` sister layer-kind
         // sub-axis peer
-        // `layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_cardinality_class_is_strict_partial_cover_pointwise`
+        // `layer_kinds_strict_partial_cover_implies_layer_kinds_support_cardinality_class_is_strict_partial_cover_pointwise`
         // and cardinality-`3` diff-altitude peer; reachability
         // strictly advances on the cardinality-`4` file-format sub-
         // axis and cardinality-`4` tier altitude where the
@@ -80391,7 +80542,7 @@ mod tests {
         // interval `[2, 0]` is empty), so the subsumption is vacuously
         // true. Matches the shared vacuous-strict-interior convention
         // with the cardinality-`3` sister layer-kind sub-axis peer
-        // `layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_boundary_distance_is_strict_interior_pointwise`
+        // `layer_kinds_strict_partial_cover_implies_layer_kinds_support_boundary_distance_is_strict_interior_pointwise`
         // and cardinality-`3` diff-altitude peer; reachability strictly
         // advances on the cardinality-`4` file-format sub-axis and
         // cardinality-`4` tier altitude where the subsumption becomes
@@ -80486,7 +80637,7 @@ mod tests {
         // **Cardinality-`2` strict-interior vacuous-unreachability
         // signature pin** — the direct mirror of the cardinality-`3`
         // sister layer-kind sub-axis signature pin
-        // `layer_kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`
+        // `layer_kinds_support_boundary_distance_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds`
         // and the cardinality-`3` diff-altitude signature pin
         // `kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior`.
         // On the two-cell EnvMetadataTagKind axis, the `StrictInterior`
@@ -81184,7 +81335,7 @@ mod tests {
         // vacuously true. Matches the shared vacuous-strict-interior
         // convention with the cardinality-`3` sister layer-kind sub-
         // axis peer
-        // `layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_magnitude_direction_is_strict_interior_pointwise`
+        // `layer_kinds_strict_partial_cover_implies_layer_kinds_support_magnitude_direction_is_strict_interior_pointwise`
         // and cardinality-`3` diff-altitude peer; reachability
         // strictly advances on the cardinality-`4` file-format sub-
         // axis and cardinality-`4` tier altitude where the subsumption
@@ -81279,7 +81430,7 @@ mod tests {
         // **Cardinality-`2` strict-interior vacuous-unreachability
         // signature pin** — the direct mirror of the cardinality-`3`
         // sister layer-kind sub-axis signature pin
-        // `layer_kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`
+        // `layer_kinds_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_exactly_on_two_present_kinds`
         // and the cardinality-`3` diff-altitude signature pin
         // `kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`.
         // On the two-cell EnvMetadataTagKind axis, the
@@ -90598,7 +90749,7 @@ mod tests {
         // two-cell env-prefix axis. Peer of
         // `file_format_peak_multiplicity_uniform_full_cover_is_four`
         // on the sister sub-axis at cardinality `4` and
-        // `layer_kind_peak_multiplicity_uniform_full_cover_is_three`
+        // `layer_kind_peak_multiplicity_uniform_full_cover_is_four`
         // on the sister sub-axis at cardinality `3` — this sub-axis
         // closes the upper boundary at the narrowest cardinality in
         // the projection.
@@ -91088,7 +91239,7 @@ mod tests {
         // value on the two-cell env-prefix axis. Peer of
         // `file_format_trough_multiplicity_uniform_full_cover_is_four`
         // on the sister sub-axis at cardinality `4` and
-        // `layer_kind_trough_multiplicity_uniform_full_cover_is_three`
+        // `layer_kind_trough_multiplicity_uniform_full_cover_is_four`
         // on the sister sub-axis at cardinality `3` — this sub-axis
         // closes the upper boundary at the narrowest cardinality in the
         // projection.
@@ -92243,7 +92394,7 @@ mod tests {
         // `file_format_modality_degree_sum_uniform_full_cover_is_eight`
         // (which reaches `8` on its cardinality-`4` uniform-cover
         // shape) and
-        // `layer_kind_modality_degree_sum_uniform_full_cover_is_six`
+        // `layer_kind_modality_degree_sum_uniform_full_cover_is_eight`
         // (which reaches `6` on its cardinality-`3` uniform-cover
         // shape) on the sister sub-axes at strictly wider
         // cardinalities. Also witnesses
@@ -96850,6 +97001,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover(),);
     }
@@ -97139,7 +97291,10 @@ mod tests {
             .layer_kind_histogram()
             .unobserved()
             .collect();
-        assert_eq!(gap, HashSet::from([ConfigSourceKind::Defaults]));
+        assert_eq!(
+            gap,
+            HashSet::from([ConfigSourceKind::Defaults, ConfigSourceKind::Cli])
+        );
 
         // Defaults-only chain → unobserved = {Env, File}: the dual
         // case where the support is the singleton {Defaults} and the
@@ -97152,7 +97307,11 @@ mod tests {
             .collect();
         assert_eq!(
             defaults_gap,
-            HashSet::from([ConfigSourceKind::Env, ConfigSourceKind::File]),
+            HashSet::from([
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+                ConfigSourceKind::Cli,
+            ]),
         );
 
         // Full-axis cover chain → unobserved is empty: every layer
@@ -97164,6 +97323,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/x.yaml")),
+            ConfigSource::Cli("--set".to_owned()),
         ];
         assert_eq!(
             axis_cover
@@ -97484,6 +97644,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env("X_".to_owned()),
             ConfigSource::File(PathBuf::from("/x")),
+            ConfigSource::Cli("--set".to_owned()),
         ]
         .iter()
         .map(ConfigSource::kind)
@@ -97506,6 +97667,7 @@ mod tests {
             ConfigSource::Defaults,
             ConfigSource::Env(String::new()),
             ConfigSource::File(PathBuf::from("/x")),
+            ConfigSource::Cli("--set".to_owned()),
         ]
         .iter()
         .map(ConfigSource::kind)
@@ -97531,6 +97693,7 @@ mod tests {
                 ConfigSourceKind::Defaults,
                 ConfigSourceKind::Env,
                 ConfigSourceKind::File,
+                ConfigSourceKind::Cli,
             ],
             "ALL must list variants in declaration order",
         );
@@ -97645,7 +97808,6 @@ mod tests {
         // variant. Sibling of
         // `config_tier_kind_from_ordinal_rejects_out_of_range` on the
         // tier-kind axis of the atomic (tier, source) pair.
-        assert_eq!(ConfigSourceKind::from_ordinal(3), None);
         assert_eq!(ConfigSourceKind::from_ordinal(4), None);
         assert_eq!(ConfigSourceKind::from_ordinal(42), None);
         assert_eq!(ConfigSourceKind::from_ordinal(usize::MAX), None);
@@ -97698,11 +97860,13 @@ mod tests {
         const AT_1: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(1);
         const AT_2: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(2);
         const AT_3: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(3);
+        const AT_4: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(4);
 
         assert_eq!(AT_0, Some(ConfigSourceKind::Defaults));
         assert_eq!(AT_1, Some(ConfigSourceKind::Env));
         assert_eq!(AT_2, Some(ConfigSourceKind::File));
-        assert_eq!(AT_3, None);
+        assert_eq!(AT_3, Some(ConfigSourceKind::Cli));
+        assert_eq!(AT_4, None);
     }
 
     #[test]
@@ -98168,7 +98332,7 @@ mod tests {
     }
 
     #[test]
-    fn config_source_kind_predicates_are_a_closed_ternary_partition() {
+    fn config_source_kind_predicates_are_a_closed_quaternary_partition() {
         // Every ConfigSourceKind::ALL cell satisfies exactly one of the
         // three sibling predicates: none satisfies two, none satisfies
         // zero. This is the ternary-partition analogue of the
@@ -98181,12 +98345,14 @@ mod tests {
         // predicate collapses the partition to "zero", failing here
         // before drifting through any consumer site.
         for k in ConfigSourceKind::ALL.iter().copied() {
-            let hits =
-                usize::from(k.is_defaults()) + usize::from(k.is_env()) + usize::from(k.is_file());
+            let hits = usize::from(k.is_defaults())
+                + usize::from(k.is_env())
+                + usize::from(k.is_file())
+                + usize::from(k.is_cli());
             assert_eq!(
                 hits, 1,
                 "ConfigSourceKind::{k:?} must satisfy exactly one of \
-                 is_defaults/is_env/is_file (satisfied {hits})",
+                 is_defaults/is_env/is_file/is_cli (satisfied {hits})",
             );
         }
     }
@@ -98496,8 +98662,8 @@ mod tests {
             "OVERLAY.len() must match the is_overlay count on ALL",
         );
         assert_eq!(ConfigSourceKind::DEFAULTS.len(), 1);
-        assert_eq!(ConfigSourceKind::OVERLAY.len(), 2);
-        assert_eq!(ConfigSourceKind::ALL.len(), 3);
+        assert_eq!(ConfigSourceKind::OVERLAY.len(), 3);
+        assert_eq!(ConfigSourceKind::ALL.len(), 4);
     }
 
     #[test]
@@ -98514,7 +98680,7 @@ mod tests {
         const OVERLAY_LEN: usize = ConfigSourceKind::OVERLAY.len();
         const ALL_LEN: usize = ConfigSourceKind::ALL.len();
         assert_eq!(DEFAULTS_LEN, 1);
-        assert_eq!(OVERLAY_LEN, 2);
+        assert_eq!(OVERLAY_LEN, 3);
         assert_eq!(DEFAULTS_LEN + OVERLAY_LEN, ALL_LEN);
     }
 
@@ -98615,7 +98781,7 @@ mod tests {
     }
 
     #[test]
-    fn config_source_kind_ternary_slices_partition_all() {
+    fn config_source_kind_identity_slices_partition_all() {
         // Ternary partition invariant: the three per-half slices are
         // pairwise-disjoint and their union covers ALL. Direct
         // application of the meta-partition sum law
@@ -98625,7 +98791,7 @@ mod tests {
         // `figment_source_kind_ternary_slices_partition_all` (`723060b`)
         // and `attribution_rule_layer_slices_partition_all` (`fae8271`),
         // and slice-altitude peer of
-        // `config_source_kind_predicates_are_a_closed_ternary_partition`
+        // `config_source_kind_predicates_are_a_closed_quaternary_partition`
         // one altitude down. A variant landing on two slices or on
         // none breaks the partition here before any consumer that
         // reasons about the polarity as a covering meta-partition
@@ -98646,23 +98812,36 @@ mod tests {
                 "ConfigSourceKind::{k:?} appears in BOTH ONLY_ENV and ONLY_FILE",
             );
         }
+        for k in ConfigSourceKind::ONLY_CLI {
+            assert!(
+                !ConfigSourceKind::ONLY_DEFAULTS.contains(k)
+                    && !ConfigSourceKind::ONLY_ENV.contains(k)
+                    && !ConfigSourceKind::ONLY_FILE.contains(k),
+                "ConfigSourceKind::{k:?} appears in ONLY_CLI and another identity slice",
+            );
+        }
         for k in ConfigSourceKind::ALL {
             let in_defaults = ConfigSourceKind::ONLY_DEFAULTS.contains(k);
             let in_env = ConfigSourceKind::ONLY_ENV.contains(k);
             let in_file = ConfigSourceKind::ONLY_FILE.contains(k);
-            let held = usize::from(in_defaults) + usize::from(in_env) + usize::from(in_file);
+            let in_cli = ConfigSourceKind::ONLY_CLI.contains(k);
+            let held = usize::from(in_defaults)
+                + usize::from(in_env)
+                + usize::from(in_file)
+                + usize::from(in_cli);
             assert_eq!(
                 held, 1,
                 "ConfigSourceKind::{k:?} must appear in exactly one of ONLY_DEFAULTS / \
-                 ONLY_ENV / ONLY_FILE (found in {held})",
+                 ONLY_ENV / ONLY_FILE / ONLY_CLI (found in {held})",
             );
         }
         assert_eq!(
             ConfigSourceKind::ONLY_DEFAULTS.len()
                 + ConfigSourceKind::ONLY_ENV.len()
-                + ConfigSourceKind::ONLY_FILE.len(),
+                + ConfigSourceKind::ONLY_FILE.len()
+                + ConfigSourceKind::ONLY_CLI.len(),
             ConfigSourceKind::ALL.len(),
-            "ONLY_DEFAULTS + ONLY_ENV + ONLY_FILE slice lengths must sum to ALL.len()",
+            "ONLY_DEFAULTS + ONLY_ENV + ONLY_FILE + ONLY_CLI slice lengths must sum to ALL.len()",
         );
     }
 
@@ -98742,7 +98921,7 @@ mod tests {
     }
 
     #[test]
-    fn config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+    fn config_source_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
         // Cardinality-agreement pin: the per-half slice lengths equal
         // the boolean-filter counts on ConfigSourceKind::ALL — i.e.,
         // `ONLY_DEFAULTS.len() == ALL.iter().filter(is_defaults).count()`
@@ -98770,6 +98949,16 @@ mod tests {
             .copied()
             .filter(|k| k.is_file())
             .count();
+        let cli_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_cli())
+            .count();
+        assert_eq!(
+            ConfigSourceKind::ONLY_CLI.len(),
+            cli_count,
+            "ONLY_CLI.len() must match the is_cli count on ALL",
+        );
         assert_eq!(
             ConfigSourceKind::ONLY_DEFAULTS.len(),
             defaults_count,
@@ -98788,11 +98977,12 @@ mod tests {
         assert_eq!(ConfigSourceKind::ONLY_DEFAULTS.len(), 1);
         assert_eq!(ConfigSourceKind::ONLY_ENV.len(), 1);
         assert_eq!(ConfigSourceKind::ONLY_FILE.len(), 1);
-        assert_eq!(ConfigSourceKind::ALL.len(), 3);
+        assert_eq!(ConfigSourceKind::ONLY_CLI.len(), 1);
+        assert_eq!(ConfigSourceKind::ALL.len(), 4);
     }
 
     #[test]
-    fn config_source_kind_ternary_slices_are_const_addressable() {
+    fn config_source_kind_identity_slices_are_const_addressable() {
         // Const-time addressability pin: the three per-half slices are
         // reachable at const evaluation position (a `const` binding of
         // `.len()`), so a future lift of any constant behind a `pub fn`
@@ -98806,11 +98996,16 @@ mod tests {
         const ONLY_DEFAULTS_LEN: usize = ConfigSourceKind::ONLY_DEFAULTS.len();
         const ONLY_ENV_LEN: usize = ConfigSourceKind::ONLY_ENV.len();
         const ONLY_FILE_LEN: usize = ConfigSourceKind::ONLY_FILE.len();
+        const ONLY_CLI_LEN: usize = ConfigSourceKind::ONLY_CLI.len();
         const ALL_LEN: usize = ConfigSourceKind::ALL.len();
         assert_eq!(ONLY_DEFAULTS_LEN, 1);
         assert_eq!(ONLY_ENV_LEN, 1);
         assert_eq!(ONLY_FILE_LEN, 1);
-        assert_eq!(ONLY_DEFAULTS_LEN + ONLY_ENV_LEN + ONLY_FILE_LEN, ALL_LEN);
+        assert_eq!(ONLY_CLI_LEN, 1);
+        assert_eq!(
+            ONLY_DEFAULTS_LEN + ONLY_ENV_LEN + ONLY_FILE_LEN + ONLY_CLI_LEN,
+            ALL_LEN
+        );
     }
 
     #[test]
@@ -98958,6 +99153,7 @@ mod tests {
         counts.insert(ConfigSourceKind::File, 3);
         counts.insert(ConfigSourceKind::Defaults, 1);
         counts.insert(ConfigSourceKind::Env, 2);
+        counts.insert(ConfigSourceKind::Cli, 4);
         let observed: Vec<ConfigSourceKind> = counts.keys().copied().collect();
         assert_eq!(
             observed,

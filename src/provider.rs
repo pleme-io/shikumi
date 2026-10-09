@@ -1931,13 +1931,19 @@ impl ProviderChain {
     /// layer is implicit and its serialized value is not retained on the
     /// recorded chain, so there is nothing to re-inject. Replaying a chain
     /// that carries no explicit defaults value leaves that base intact,
-    /// which matches the original load.
+    /// which matches the original load. [`ConfigSource::Cli`] is the
+    /// identity for the same reason: argv is not re-readable at reload.
     #[must_use]
     pub fn with_source(self, source: &ConfigSource) -> Self {
         match source {
             ConfigSource::File(path) => self.with_file(path),
             ConfigSource::Env(prefix) => self.with_env(prefix),
-            ConfigSource::Defaults => self,
+            // A CLI layer is a progressive-fold overlay
+            // ([`crate::ProgressiveLayer::cli`] / [`crate::ProgressiveLayer::set`]);
+            // no `ProviderChain` builder records one, and its dict lives on the
+            // invoking process's argv, not on disk — so, like `Defaults`, there
+            // is nothing a reload could re-read. Identity by design.
+            ConfigSource::Defaults | ConfigSource::Cli(_) => self,
         }
     }
 
@@ -3341,6 +3347,9 @@ mod tests {
                     let s = ConfigSource::File("/tmp/k.toml".into());
                     (s.clone(), vec![s])
                 }
+                // Replay of a CLI layer is the identity (argv is not
+                // re-readable), so it records nothing — like Defaults.
+                ConfigSourceKind::Cli => (ConfigSource::Cli("--set".to_owned()), vec![]),
             };
             let chain = ProviderChain::new().with_source(&source);
             assert_eq!(

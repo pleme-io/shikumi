@@ -1561,6 +1561,20 @@ impl Provenance {
         }
     }
 
+    /// An operator COMMAND-LINE overlay — tier [`ConfigTierKind::Custom`],
+    /// source [`ConfigSource::Cli`] labelled with the flag surface that
+    /// produced it (`"flags"` for a typed overlay struct, `"--set"` for
+    /// dotted-path assignments). Same tier rank as [`Self::file`] /
+    /// [`Self::env`]; the within-tier order is the typed
+    /// [`OverlaySlot`] the carrying [`ProgressiveLayer`] holds.
+    #[must_use]
+    pub fn cli(flag: impl Into<String>) -> Self {
+        Self {
+            tier: ConfigTierKind::Custom,
+            source: ConfigSource::for_cli(flag),
+        }
+    }
+
     /// The zero-opinion floor tier — tier [`ConfigTierKind::Bare`], source
     /// [`ConfigSource::Defaults`]. The tier-axis peer of [`Self::discovered`]
     /// / [`Self::prescribed_default`] on the computed-defaults row: every
@@ -2654,6 +2668,7 @@ impl std::fmt::Display for Provenance {
             ConfigSource::Defaults => Ok(()),
             ConfigSource::Env(prefix) => write!(f, " (env: {prefix})"),
             ConfigSource::File(path) => write!(f, " (file: {})", path.display()),
+            ConfigSource::Cli(flag) => write!(f, " (cli: {flag})"),
         }
     }
 }
@@ -111817,6 +111832,20 @@ mod progressive_tests {
         ])
     }
 
+    /// [`source_kind_histogram_mixed_fixture`] plus one CLI-sourced leaf
+    /// `e` — a full cover of the cardinality-4 `ConfigSourceKind` axis
+    /// (`Defaults` 2 / `Env` 1 / `File` 1 / `Cli` 1) that keeps the mixed
+    /// fixture's non-uniform shape (spread 1). `Prog` has only four leaves,
+    /// so a real fold cannot cover four source kinds non-uniformly; the
+    /// extra leaf is a synthetic provenance entry for the histogram
+    /// algebra, which reads the map, never the value.
+    fn source_kind_cli_mixed_fixture() -> ProgressiveResolution<Prog> {
+        let r = source_kind_histogram_mixed_fixture();
+        let mut provenance = r.provenance().clone();
+        provenance.extend([(vec!["e".to_owned()], Provenance::cli("--set"))]);
+        ProgressiveResolution::new(r.value().clone(), provenance)
+    }
+
     #[test]
     fn source_kind_histogram_total_matches_provenance_map_len() {
         // Every leaf projects to exactly one source_kind cell, so the
@@ -111851,7 +111880,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_histogram_mixed_overlays_cover_every_cell() {
+    fn source_kind_histogram_mixed_overlays_cover_every_non_cli_cell() {
         // The mixed-overlay fixture layers one env overlay (touching
         // only `c`) and one file overlay (touching only `b`) onto Prog's
         // progressive fold. The resulting per-leaf source_kinds are:
@@ -111867,10 +111896,14 @@ mod progressive_tests {
         assert_eq!(hist.count(crate::ConfigSourceKind::Defaults), 2); // a, d
         assert_eq!(hist.count(crate::ConfigSourceKind::Env), 1); // c
         assert_eq!(hist.count(crate::ConfigSourceKind::File), 1); // b
+        assert_eq!(hist.count(crate::ConfigSourceKind::Cli), 0);
         assert_eq!(hist.total(), 4);
+        // File + env overlays saturate every non-CLI cell; Cli is the one
+        // gap on the cardinality-4 axis.
+        assert!(!hist.is_full_cover());
         assert!(
-            hist.is_full_cover(),
-            "mixed overlays must saturate every ConfigSourceKind cell",
+            hist.has_singular_gap(),
+            "mixed overlays must saturate every ConfigSourceKind cell but Cli",
         );
         assert_eq!(hist.distinct_cells(), 3);
     }
@@ -111985,7 +112018,11 @@ mod progressive_tests {
             .collect();
         assert_eq!(
             unobserved,
-            vec![crate::ConfigSourceKind::Env, crate::ConfigSourceKind::File],
+            vec![
+                crate::ConfigSourceKind::Env,
+                crate::ConfigSourceKind::File,
+                crate::ConfigSourceKind::Cli,
+            ],
         );
     }
 
@@ -112071,7 +112108,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn absent_source_kinds_pure_progressive_prog_is_env_and_file() {
+    fn absent_source_kinds_pure_progressive_prog_is_env_file_and_cli() {
         // The coverage-gap dual of the observed-set pin above: on the
         // no-overlay Prog fixture the two operator-tier layer kinds
         // (`Env` and `File`) never contribute a leaf, so the
@@ -112080,7 +112117,11 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         assert_eq!(
             r.provenance().absent_source_kinds(),
-            vec![crate::ConfigSourceKind::Env, crate::ConfigSourceKind::File],
+            vec![
+                crate::ConfigSourceKind::Env,
+                crate::ConfigSourceKind::File,
+                crate::ConfigSourceKind::Cli,
+            ],
         );
     }
 
@@ -112104,10 +112145,10 @@ mod progressive_tests {
     }
 
     #[test]
-    fn absent_source_kinds_mixed_fixture_is_empty() {
+    fn absent_source_kinds_cli_mixed_fixture_is_empty() {
         // The full-cover boundary on the coverage-gap side: when every
         // source-kind cell is observed, the coverage-gap is empty.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().absent_source_kinds().is_empty());
     }
 
@@ -112171,6 +112212,7 @@ mod progressive_tests {
                 crate::ConfigSourceKind::Defaults,
                 crate::ConfigSourceKind::Env,
                 crate::ConfigSourceKind::File,
+                crate::ConfigSourceKind::Cli,
             ],
         );
         for map in [
@@ -112427,7 +112469,7 @@ mod progressive_tests {
         // declaration order is Env (the head of
         // `ConfigSourceKind::ALL` restricted to the coverage-gap).
         // Head-projection peer of
-        // `absent_source_kinds_pure_progressive_prog_is_env_and_file`
+        // `absent_source_kinds_pure_progressive_prog_is_env_file_and_cli`
         // on the same fixture and altitude.
         let r = Prog::resolve_progressive();
         assert_eq!(
@@ -112437,12 +112479,12 @@ mod progressive_tests {
     }
 
     #[test]
-    fn first_absent_source_kind_mixed_fixture_is_none() {
+    fn first_absent_source_kind_cli_mixed_fixture_is_none() {
         // Full-cover boundary pin: the mixed-overlay fixture saturates
         // every source-kind cell (Defaults=2, Env=1, File=1), so the
         // coverage-gap head is `None`. Distinguishes the full-cover
         // `None` from the empty-map `Some(Defaults)`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.provenance().first_absent_source_kind(), None);
     }
 
@@ -112771,19 +112813,19 @@ mod progressive_tests {
     }
 
     #[test]
-    fn last_absent_source_kind_empty_map_is_file() {
+    fn last_absent_source_kind_empty_map_is_cli() {
         // Empty-map tail convention: every cell absent, tail of
         // `ConfigSourceKind::ALL` is `File`. Source-altitude peer of
         // `last_absent_tier_empty_map_is_custom`.
         let empty = ProvenanceMap::default();
         assert_eq!(
             empty.last_absent_source_kind(),
-            Some(crate::ConfigSourceKind::File)
+            Some(crate::ConfigSourceKind::Cli)
         );
     }
 
     #[test]
-    fn last_absent_source_kind_prog_fixture_is_file() {
+    fn last_absent_source_kind_prog_fixture_is_cli() {
         // Direct fixture pin: pure-progressive Prog collapses to
         // `Defaults` only, so absent = {Env, File} in declaration
         // order and the coverage-gap TAIL is `File`. Distinguishes
@@ -112793,15 +112835,15 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         assert_eq!(
             r.provenance().last_absent_source_kind(),
-            Some(crate::ConfigSourceKind::File)
+            Some(crate::ConfigSourceKind::Cli)
         );
     }
 
     #[test]
-    fn last_absent_source_kind_mixed_fixture_is_none() {
+    fn last_absent_source_kind_cli_mixed_fixture_is_none() {
         // Full-cover boundary pin: the mixed-overlay fixture saturates
         // every source-kind cell, so the coverage-gap tail is `None`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.provenance().last_absent_source_kind(), None);
     }
 
@@ -113157,7 +113199,7 @@ mod progressive_tests {
 
         // Full-cover: the mixed fixture layers env + file overlays so
         // every source-kind cell observes ≥1 leaf.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kind_histogram().is_full_cover());
         assert_eq!(r.provenance().contributing_source_kinds_count(), axis_size);
 
@@ -113353,7 +113395,7 @@ mod progressive_tests {
         // `absent_tiers_count_is_zero_iff_is_full_cover`.
 
         // Full-cover: the mixed fixture layers env + file overlays.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kind_histogram().is_full_cover());
         assert_eq!(r.provenance().absent_source_kinds_count(), 0);
 
@@ -113476,12 +113518,12 @@ mod progressive_tests {
         // Direct fixture pin: the mixed fixture has ≥1 leaf on every
         // source-kind cell, so the coverage gap is empty and
         // `absent_source_kinds_count` reads 0.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.provenance().absent_source_kinds_count(), 0);
     }
 
     #[test]
-    fn absent_source_kinds_count_prog_fixture_is_two() {
+    fn absent_source_kinds_count_prog_fixture_is_three() {
         // Direct fixture pin: Prog attributes 4 leaves, all with source-
         // kind `Defaults`, so `Env` and `File` are the coverage-gap
         // cells and `absent_source_kinds_count` reads 2. Coverage-gap
@@ -113489,7 +113531,7 @@ mod progressive_tests {
         // on the same fixture and altitude, and source-altitude peer of
         // `absent_tiers_count_prog_fixture_is_one` on the tier altitude.
         let r = Prog::resolve_progressive();
-        assert_eq!(r.provenance().absent_source_kinds_count(), 2);
+        assert_eq!(r.provenance().absent_source_kinds_count(), 3);
     }
 
     // ── ProvenanceMap::dominant_source_kind — modal-cell scalar peer of
@@ -113662,6 +113704,7 @@ mod progressive_tests {
             (vec!["a".to_owned()], Provenance::bare()),
             (vec!["b".to_owned()], Provenance::env("SHIKUMI_TIEBREAK_")),
             (vec!["c".to_owned()], Provenance::file("/etc/tiebreak.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -113729,6 +113772,7 @@ mod progressive_tests {
             (vec!["a".to_owned()], Provenance::bare()),
             (vec!["b".to_owned()], Provenance::env("SHIKUMI_UNIFORM_")),
             (vec!["c".to_owned()], Provenance::file("/etc/uniform.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -114134,6 +114178,7 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/dsko_uniform.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -114887,6 +114932,7 @@ mod progressive_tests {
             (vec!["a".to_owned()], Provenance::bare()),
             (vec!["b".to_owned()], Provenance::env("SHIKUMI_TIEBREAK_")),
             (vec!["c".to_owned()], Provenance::file("/etc/tiebreak.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -115179,6 +115225,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -115481,6 +115528,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -115756,6 +115804,7 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/rsko_uniform.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -116059,6 +116108,7 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/rsko_coincide.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -116279,7 +116329,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn modal_source_kind_observation_uniform_full_cover_is_defaults_one_three() {
+    fn modal_source_kind_observation_uniform_full_cover_is_defaults_one_four() {
         // Uniform three-source-kind cover polarity pin: one leaf per
         // `ConfigSourceKind` cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at the peak — fused triple reads
@@ -116298,13 +116348,14 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/msko_uniform.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
         assert!(m.source_kinds_full_cover());
         assert_eq!(
             m.modal_source_kind_observation(),
-            Some((crate::ConfigSourceKind::Defaults, 1, 3)),
+            Some((crate::ConfigSourceKind::Defaults, 1, 4)),
         );
         assert_eq!(
             m.modal_source_kind_observation().unwrap().2,
@@ -116865,7 +116916,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn antimodal_source_kind_observation_uniform_full_cover_is_defaults_one_three() {
+    fn antimodal_source_kind_observation_uniform_full_cover_is_defaults_one_four() {
         // Uniform three-source-kind cover polarity pin: one leaf per
         // `ConfigSourceKind` cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at the trough — fused triple reads
@@ -116886,13 +116937,14 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/asko_uniform.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
         assert!(m.source_kinds_full_cover());
         assert_eq!(
             m.antimodal_source_kind_observation(),
-            Some((crate::ConfigSourceKind::Defaults, 1, 3)),
+            Some((crate::ConfigSourceKind::Defaults, 1, 4)),
         );
         assert_eq!(
             m.antimodal_source_kind_observation().unwrap().2,
@@ -117250,8 +117302,8 @@ mod progressive_tests {
     }
 
     #[test]
-    fn extremal_source_kind_observations_uniform_full_cover_is_defaults_one_three_defaults_one_three()
-     {
+    fn extremal_source_kind_observations_uniform_full_cover_is_defaults_one_four_defaults_one_four()
+    {
         // Uniform three-source-kind cover polarity pin: one leaf per
         // `ConfigSourceKind` cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at peak and trough — fused quadruple
@@ -117272,14 +117324,15 @@ mod progressive_tests {
                 vec!["c".to_owned()],
                 Provenance::file("/etc/extremal_sk_cover.yaml"),
             ),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
         assert_eq!(
             m.extremal_source_kind_observations(),
             Some((
-                (crate::ConfigSourceKind::Defaults, 1, 3),
-                (crate::ConfigSourceKind::Defaults, 1, 3),
+                (crate::ConfigSourceKind::Defaults, 1, 4),
+                (crate::ConfigSourceKind::Defaults, 1, 4),
             )),
         );
         let obs = m.extremal_source_kind_observations().unwrap();
@@ -117786,6 +117839,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let prov = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => {
                         Provenance::computed(ConfigTierKind::Default)
                     }
@@ -118502,6 +118556,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -118843,6 +118898,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -119237,6 +119293,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -119631,6 +119688,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -120102,6 +120160,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -120608,6 +120667,7 @@ mod progressive_tests {
             .copied()
             .map(|k| {
                 let p = match k {
+                    crate::ConfigSourceKind::Cli => Provenance::cli("--set"),
                     crate::ConfigSourceKind::Defaults => Provenance::bare(),
                     crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
                     crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
@@ -121661,7 +121721,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn peak_source_kind_multiplicity_uniform_full_cover_is_three() {
+    fn peak_source_kind_multiplicity_uniform_full_cover_is_four() {
         // Uniform three-source-kind cover pin: one leaf per
         // ConfigSourceKind cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at the peak — multiplicity reads `3`
@@ -121674,10 +121734,11 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert_eq!(m.peak_source_kind_multiplicity(), 4);
         assert_eq!(
             m.peak_source_kind_multiplicity(),
             crate::axis_cardinality::<crate::ConfigSourceKind>()
@@ -121891,7 +121952,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn peak_source_kind_observation_uniform_full_cover_is_one_three() {
+    fn peak_source_kind_observation_uniform_full_cover_is_one_four() {
         // Uniform three-source-kind cover pin: one leaf per
         // ConfigSourceKind cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at the peak — fused pair reads
@@ -121904,10 +121965,11 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.peak_source_kind_observation(), (1, 3));
+        assert_eq!(m.peak_source_kind_observation(), (1, 4));
         assert_eq!(
             m.peak_source_kind_observation().1,
             crate::axis_cardinality::<crate::ConfigSourceKind>()
@@ -122027,7 +122089,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn trough_source_kind_multiplicity_uniform_full_cover_is_three() {
+    fn trough_source_kind_multiplicity_uniform_full_cover_is_four() {
         // Uniform three-source-kind cover: all three cells at count `1`,
         // all tied at the trough (and simultaneously at the peak).
         // Multiplicity reads `3` = axis cardinality on the source-kind
@@ -122039,10 +122101,11 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 4);
         assert_eq!(
             m.trough_source_kind_multiplicity(),
             crate::axis_cardinality::<crate::ConfigSourceKind>()
@@ -122322,7 +122385,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn trough_source_kind_observation_uniform_full_cover_is_one_three() {
+    fn trough_source_kind_observation_uniform_full_cover_is_one_four() {
         // Uniform three-source-kind cover pin: one leaf per
         // ConfigSourceKind cell (Defaults + Env + File), all at count
         // `1`. All three cells tie at the trough (and simultaneously at
@@ -122336,10 +122399,11 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.trough_source_kind_observation(), (1, 3));
+        assert_eq!(m.trough_source_kind_observation(), (1, 4));
         assert_eq!(
             m.trough_source_kind_observation().1,
             crate::axis_cardinality::<crate::ConfigSourceKind>()
@@ -122787,7 +122851,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_modality_degree_sum_uniform_full_cover_is_six() {
+    fn source_kind_modality_degree_sum_uniform_full_cover_is_eight() {
         // Uniform three-source-kind cover: all three cells at count
         // `1`, both multiplicities read `3`, so the sum reads `6` at
         // its structural ceiling on the three-cell axis.
@@ -122798,12 +122862,13 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.peak_source_kind_multiplicity(), 3);
-        assert_eq!(m.trough_source_kind_multiplicity(), 3);
-        assert_eq!(m.source_kind_modality_degree_sum(), 6);
+        assert_eq!(m.peak_source_kind_multiplicity(), 4);
+        assert_eq!(m.trough_source_kind_multiplicity(), 4);
+        assert_eq!(m.source_kind_modality_degree_sum(), 8);
         assert_eq!(
             m.source_kind_modality_degree_sum(),
             2 * crate::axis_cardinality::<crate::ConfigSourceKind>(),
@@ -123147,7 +123212,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_modality_degree_uniform_full_cover_is_three_three_pair() {
+    fn source_kind_modality_degree_uniform_full_cover_is_four_four_pair() {
         // Uniform-axis-cover polarity pin: every ConfigSourceKind cell
         // contributes exactly one leaf, so all three cells tie at both
         // the peak and the trough. Both multiplicities read `3` (=
@@ -123163,13 +123228,14 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds_count(), 3);
-        assert_eq!(m.peak_source_kind_multiplicity(), 3);
-        assert_eq!(m.trough_source_kind_multiplicity(), 3);
-        assert_eq!(m.source_kind_modality_degree(), (3, 3));
+        assert_eq!(m.contributing_source_kinds_count(), 4);
+        assert_eq!(m.peak_source_kind_multiplicity(), 4);
+        assert_eq!(m.trough_source_kind_multiplicity(), 4);
+        assert_eq!(m.source_kind_modality_degree(), (4, 4));
         assert_eq!(
             m.source_kind_modality_degree().0,
             crate::axis_cardinality::<crate::ConfigSourceKind>(),
@@ -124889,6 +124955,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -125275,7 +125342,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_cardinality_class_mixed_full_cover_fixture_is_full_cover_variant() {
+    fn source_kind_support_cardinality_class_cli_mixed_full_cover_fixture_is_full_cover_variant() {
         // Full-cover polarity pin: the mixed-overlay fixture layers one
         // env overlay (touching `c`) and one file overlay (touching
         // `b`) onto Prog's progressive fold, so every ConfigSourceKind
@@ -125286,7 +125353,7 @@ mod progressive_tests {
         // `3` counterpart of the cardinality-`4` tier-altitude uniform-
         // cover pin
         // `tiers_support_cardinality_class_uniform_four_tier_cover_is_full_cover_variant`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kind_histogram().is_full_cover());
         assert_eq!(
             r.provenance().source_kind_support_cardinality_class(),
@@ -125295,7 +125362,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_cardinality_class_two_cell_partial_cover_is_singular_gap_variant() {
+    fn source_kind_support_cardinality_class_three_cell_partial_cover_is_singular_gap_variant() {
         // Two-source-kind partial-cover pin: a fold observing exactly
         // two source-kinds (`Defaults` from a computed-tier leaf +
         // `Env` from an env overlay leaf) has `distinct_cells` reading
@@ -125316,10 +125383,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds_count(), 2);
+        assert_eq!(m.contributing_source_kinds_count(), 3);
         assert!(m.source_kind_histogram().has_singular_gap());
         assert_eq!(
             m.source_kind_support_cardinality_class(),
@@ -125745,7 +125813,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_boundary_distance_two_cell_partial_cover_is_singular_variant() {
+    fn source_kind_support_boundary_distance_three_cell_partial_cover_is_singular_variant() {
         // Two-source-kind partial-cover pin: a fold observing exactly
         // two source-kinds (`Defaults` from a computed-tier leaf +
         // `Env` from an env overlay leaf) has `distinct_cells` reading
@@ -125763,6 +125831,7 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
         ]
         .into_iter()
         .collect();
@@ -125774,7 +125843,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_boundary_distance_mixed_full_cover_fixture_is_boundary_variant() {
+    fn source_kind_support_boundary_distance_cli_mixed_full_cover_fixture_is_boundary_variant() {
         // Full-cover polarity pin: the mixed-overlay fixture layers one
         // env overlay (touching `c`) and one file overlay (touching
         // `b`) onto Prog's progressive fold, so every ConfigSourceKind
@@ -125785,7 +125854,7 @@ mod progressive_tests {
         // of the support-cardinality interval). Cardinality-`3`
         // counterpart of the cardinality-`3` diff-altitude pin
         // `kinds_support_boundary_distance_uniform_three_kind_cover_is_boundary_variant`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kind_histogram().is_full_cover());
         assert_eq!(
             r.provenance().source_kind_support_boundary_distance(),
@@ -126087,14 +126156,14 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_cardinality_class_ordinal_never_reads_strict_partial_cover_on_source_kind_axis()
+    fn source_kind_support_cardinality_class_ordinal_reads_strict_partial_cover_exactly_on_two_of_four_cover()
      {
         // Vacuous-unreachability pin on the cardinality-3 source-kind
         // axis — the StrictPartialCover corner (ordinal `2`) is itself
         // vacuous, so the ordinal reads only `0` (Empty), `1`
         // (SingularSupport), `3` (SingularGap), or `4` (FullCover) on
         // every fold.
-        let two_cell: ProvenanceMap = [
+        let two_kind: ProvenanceMap = [
             (
                 vec!["a".to_owned()],
                 Provenance::computed(ConfigTierKind::Default),
@@ -126108,16 +126177,15 @@ mod progressive_tests {
             source_kind_histogram_mixed_fixture().provenance().clone(),
             Nested::resolve_progressive().provenance().clone(),
             ProvenanceMap::default(),
-            two_cell,
+            two_kind,
         ] {
+            // Cardinality-4 axis (since `Cli`): StrictPartialCover (2) is
+            // reached exactly by the two-of-four covers.
             let o = map.source_kind_support_cardinality_class_ordinal();
-            assert_ne!(
-                o, 2,
-                "cardinality-3 source-kind axis must never read StrictPartialCover ordinal (2), got {o}",
-            );
-            assert!(
-                o == 0 || o == 1 || o == 3 || o == 4,
-                "cardinality-3 source-kind axis must read only Empty(0), SingularSupport(1), SingularGap(3), or FullCover(4), got {o}",
+            assert_eq!(
+                o == 2,
+                map.contributing_source_kinds_count() == 2,
+                "StrictPartialCover (2) must be read exactly on two-of-four covers, got {o}",
             );
         }
     }
@@ -126131,11 +126199,11 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_cardinality_class_ordinal_mixed_full_cover_is_four() {
+    fn source_kind_support_cardinality_class_ordinal_cli_mixed_full_cover_is_four() {
         // Mixed-fixture literal pin: source-kind FullCover on the
         // cardinality-3 axis (all three source-kinds observed —
         // Defaults, Env, File) projects to ordinal `4`.
-        let m = source_kind_histogram_mixed_fixture();
+        let m = source_kind_cli_mixed_fixture();
         assert_eq!(
             m.provenance().source_kind_support_cardinality_class(),
             crate::SupportCardinalityClass::FullCover,
@@ -126203,13 +126271,13 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_boundary_distance_ordinal_never_reads_strict_interior_on_source_kind_axis()
+    fn source_kind_support_boundary_distance_ordinal_reads_strict_interior_exactly_on_two_of_four_cover()
      {
         // Vacuous-unreachability pin on the cardinality-3 source-kind
         // axis — the strict-interior middle leg (ordinal `2`) is itself
         // vacuous, so the ordinal reads only `0` (Boundary) or `1`
         // (Singular) on every fold.
-        let two_cell: ProvenanceMap = [
+        let two_kind: ProvenanceMap = [
             (
                 vec!["a".to_owned()],
                 Provenance::computed(ConfigTierKind::Default),
@@ -126223,12 +126291,15 @@ mod progressive_tests {
             source_kind_histogram_mixed_fixture().provenance().clone(),
             Nested::resolve_progressive().provenance().clone(),
             ProvenanceMap::default(),
-            two_cell,
+            two_kind,
         ] {
+            // Cardinality-4 axis (since `Cli`): StrictInterior (2) is
+            // reached exactly by the two-of-four covers.
             let o = map.source_kind_support_boundary_distance_ordinal();
-            assert!(
-                o == 0 || o == 1,
-                "cardinality-3 source-kind axis must read only Boundary (0) or Singular (1), got {o}",
+            assert_eq!(
+                o == 2,
+                map.contributing_source_kinds_count() == 2,
+                "StrictInterior (2) must be read exactly on two-of-four covers, got {o}",
             );
         }
     }
@@ -126243,11 +126314,11 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_boundary_distance_ordinal_mixed_full_cover_is_zero() {
+    fn source_kind_support_boundary_distance_ordinal_cli_mixed_full_cover_is_zero() {
         // Mixed-fixture literal pin: source-kind FullCover on the
         // cardinality-3 axis projects to Boundary (ordinal `0`) via the
         // Empty + FullCover pair that collapses to the boundary bucket.
-        let m = source_kind_histogram_mixed_fixture();
+        let m = source_kind_cli_mixed_fixture();
         assert_eq!(m.source_kind_support_boundary_distance_ordinal(), 0);
     }
 
@@ -126368,7 +126439,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_magnitude_direction_two_cell_partial_cover_is_high_variant() {
+    fn source_kind_support_magnitude_direction_three_cell_partial_cover_is_high_variant() {
         // Two-source-kind partial-cover pin: a fold observing exactly
         // two source-kinds (`Defaults` from a computed-tier leaf +
         // `Env` from an env overlay leaf) has `distinct_cells` reading
@@ -126387,6 +126458,7 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
         ]
         .into_iter()
         .collect();
@@ -126398,7 +126470,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_magnitude_direction_mixed_full_cover_fixture_is_high_variant() {
+    fn source_kind_support_magnitude_direction_cli_mixed_full_cover_fixture_is_high_variant() {
         // Full-cover polarity pin: the mixed-overlay fixture layers one
         // env overlay (touching `c`) and one file overlay (touching
         // `b`) onto Prog's progressive fold, so every ConfigSourceKind
@@ -126409,7 +126481,7 @@ mod progressive_tests {
         // of the support-cardinality interval). Cardinality-`3`
         // counterpart of the cardinality-`3` diff-altitude pin
         // `kinds_support_magnitude_direction_uniform_three_kind_cover_is_high_variant`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kind_histogram().is_full_cover());
         assert_eq!(
             r.provenance().source_kind_support_magnitude_direction(),
@@ -126418,8 +126490,8 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_magnitude_direction_strict_interior_is_vacuously_unreachable_pointwise()
-    {
+    fn source_kind_support_magnitude_direction_strict_interior_is_reached_exactly_on_two_of_four_cover_pointwise()
+     {
         // Vacuous-strict-interior pin: the cardinality-`3`
         // ConfigSourceKind axis has an empty strict interval `[2,
         // cardinality - 2] = [2, 1]`, so the underlying
@@ -126434,7 +126506,7 @@ mod progressive_tests {
         // stands in strict contrast to the cardinality-`4` tier altitude
         // where the two-tier partial-cover fold is the singleton
         // witness.
-        let two_cell: ProvenanceMap = [
+        let two_kind: ProvenanceMap = [
             (
                 vec!["a".to_owned()],
                 Provenance::computed(ConfigTierKind::Default),
@@ -126447,13 +126519,14 @@ mod progressive_tests {
             Prog::resolve_progressive().provenance().clone(),
             source_kind_histogram_mixed_fixture().provenance().clone(),
             ProvenanceMap::default(),
-            two_cell,
+            two_kind,
         ] {
-            assert!(
-                !map.source_kind_support_magnitude_direction()
+            // Cardinality-4 axis (since `Cli`): the StrictInterior variant
+            // is reachable, and exactly by the two-of-four covers.
+            assert_eq!(
+                map.source_kind_support_magnitude_direction()
                     .is_strict_interior(),
-                "cardinality-3 source-kind axis: StrictInterior \
-                 variant must be vacuously unreachable",
+                map.contributing_source_kinds_count() == 2,
             );
         }
     }
@@ -126774,12 +126847,12 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kind_support_magnitude_direction_ordinal_never_reads_one_on_source_kind_axis() {
+    fn source_kind_support_magnitude_direction_ordinal_reads_one_exactly_on_two_of_four_cover() {
         // Vacuous-unreachability pin on the cardinality-3 source-kind
         // axis — the strict-interior middle leg (ordinal `1`) is itself
         // vacuous, so the ordinal reads only `0` (Low) or `2` (High)
         // on every fold.
-        let two_cell: ProvenanceMap = [
+        let two_kind: ProvenanceMap = [
             (
                 vec!["a".to_owned()],
                 Provenance::computed(ConfigTierKind::Default),
@@ -126793,12 +126866,15 @@ mod progressive_tests {
             source_kind_histogram_mixed_fixture().provenance().clone(),
             Nested::resolve_progressive().provenance().clone(),
             ProvenanceMap::default(),
-            two_cell,
+            two_kind,
         ] {
+            // Cardinality-4 axis (since `Cli`): StrictInterior (1) is read
+            // exactly on the two-of-four covers; otherwise Low (0) or High (2).
             let o = map.source_kind_support_magnitude_direction_ordinal();
-            assert!(
-                o == 0 || o == 2,
-                "cardinality-3 source-kind axis must read only Low (0) or High (2), got {o}",
+            assert_eq!(
+                o == 1,
+                map.contributing_source_kinds_count() == 2,
+                "StrictInterior (1) must be read exactly on two-of-four covers, got {o}",
             );
         }
     }
@@ -126961,7 +127037,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_uniform_count_uniform_three_source_kind_cover_is_true() {
+    fn source_kinds_uniform_count_uniform_four_source_kind_cover_is_true() {
         // Uniform-axis-cover polarity pin: a fold observing every cell
         // of ConfigSourceKind exactly once has all three nonzero counts
         // at `1`. Simultaneous witness for
@@ -126978,6 +127054,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -126986,7 +127063,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_uniform_count_mixed_fixture_is_false() {
+    fn source_kinds_uniform_count_cli_mixed_fixture_is_false() {
         // Direct polarity pin: the source-kind-histogram-mixed fixture
         // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
         // peak `2` on Defaults, trough `1` on {Env, File}. Spread `1`,
@@ -126994,14 +127071,14 @@ mod progressive_tests {
         // skewed-full-cover witness on the source-kind altitude,
         // mirroring the tier-altitude skewed witness pinned by
         // `tiers_uniform_count_prog_fixture_is_false`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.provenance().source_kind_spread(), 1);
         assert!(!r.provenance().source_kinds_uniform_count());
         assert!(r.provenance().source_kind_histogram().is_full_cover());
     }
 
     #[test]
-    fn source_kinds_uniform_count_skewed_three_cell_fixture_is_false() {
+    fn source_kinds_uniform_count_skewed_four_cell_fixture_is_false() {
         // Skewed-full-cover polarity pin: a strictly-ordered three-cell
         // fold with Defaults=1, Env=2, File=3 — peak 3, trough 1,
         // spread 2 — reads `false`. Every count distinct, no tie-
@@ -127018,6 +127095,7 @@ mod progressive_tests {
             (vec!["f1".to_owned()], Provenance::file("/etc/x.yaml")),
             (vec!["f2".to_owned()], Provenance::file("/etc/x.yaml")),
             (vec!["f3".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -127373,6 +127451,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -127406,7 +127485,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_balanced_mixed_fixture_is_false() {
+    fn source_kinds_balanced_cli_mixed_fixture_is_false() {
         // Direct pin: the source-kind-histogram-mixed fixture attributes
         // 4 leaves as `{Defaults: 2, Env: 1, File: 1}` — peak `2` on
         // Defaults, trough `1` on {Env, File}. Spread `1`, so
@@ -127414,7 +127493,7 @@ mod progressive_tests {
         // cover witness on the source-kind altitude, mirroring the tier-
         // altitude skewed witness pinned by
         // `tiers_balanced_prog_fixture_is_false`.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.provenance().source_kind_spread(), 1);
         assert!(!r.provenance().source_kinds_balanced());
         assert!(r.provenance().source_kind_histogram().is_full_cover());
@@ -127520,14 +127599,14 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_balanced_skewed_three_cell_fixture_is_false() {
+    fn source_kinds_balanced_skewed_four_cell_fixture_is_false() {
         // Direct pin: a strictly-ordered three-cell fold with
         // Defaults=1, Env=2, File=3 — peak 3, trough 1, spread 2 —
         // reads `false`. Every count distinct, no tie-breaking on
         // either side of the modal-count pair. Cardinality-`3` peer of
         // `tiers_balanced_skewed_three_cell_fixture_is_false` on the
         // tier altitude and
-        // `source_kinds_uniform_count_skewed_three_cell_fixture_is_false`
+        // `source_kinds_uniform_count_skewed_four_cell_fixture_is_false`
         // on the alias-side one seam over.
         let m: ProvenanceMap = [
             (
@@ -127539,6 +127618,7 @@ mod progressive_tests {
             (vec!["f1".to_owned()], Provenance::file("/etc/x.yaml")),
             (vec!["f2".to_owned()], Provenance::file("/etc/x.yaml")),
             (vec!["f3".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -127800,7 +127880,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_full_cover_uniform_three_source_kind_cover_is_true() {
+    fn source_kinds_full_cover_uniform_four_source_kind_cover_is_true() {
         // Uniform-cover pin: a fold observing every cell of
         // `ConfigSourceKind` exactly once has all three cells nonzero
         // — `source_kinds_full_cover` reads `true`. Simultaneous
@@ -127817,6 +127897,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -127825,7 +127906,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_full_cover_mixed_fixture_is_true() {
+    fn source_kinds_full_cover_cli_mixed_fixture_is_true() {
         // Direct pin against the source-kind-histogram-mixed fixture:
         // the fixture attributes 4 leaves as `{Defaults: 2, Env: 1,
         // File: 1}` — every cell of `ConfigSourceKind::ALL` was
@@ -127837,7 +127918,7 @@ mod progressive_tests {
         // the uniformity boundary. Cardinality-`3` peer of
         // `tiers_full_cover_skewed_four_cell_fixture_is_true` on the
         // tier altitude.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(!r.provenance().source_kinds_uniform_count());
     }
@@ -128120,7 +128201,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_any_observed_uniform_three_source_kind_cover_is_true() {
+    fn source_kinds_any_observed_uniform_four_source_kind_cover_is_true() {
         // Uniform-cover pin: a fold observing every cell of
         // `ConfigSourceKind` exactly once has three observed cells —
         // `source_kinds_any_observed` reads `true`. The uniform
@@ -128136,6 +128217,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -128145,7 +128227,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_any_observed_mixed_fixture_is_true() {
+    fn source_kinds_any_observed_cli_mixed_fixture_is_true() {
         // Direct pin against the source-kind-histogram-mixed fixture:
         // the fixture attributes 4 leaves as `{Defaults: 2, Env: 1,
         // File: 1}` — every cell observed at least once, so
@@ -128154,7 +128236,7 @@ mod progressive_tests {
         // `source_kinds_uniform_count`=false — the fixture pins the
         // (any_observed, uniform, full_cover) triple at
         // (true, false, true) on the source-kind altitude.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_any_observed());
         assert!(r.provenance().source_kinds_full_cover());
         assert!(!r.provenance().source_kinds_uniform_count());
@@ -128496,7 +128578,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_partial_cover_uniform_three_source_kind_cover_is_false() {
+    fn source_kinds_partial_cover_uniform_four_source_kind_cover_is_false() {
         // Uniform-cover pin: a fold observing every `ConfigSourceKind`
         // cell exactly once has support cardinality `3` — no
         // unobserved cell on the cardinality-`3` axis, so
@@ -128512,6 +128594,7 @@ mod progressive_tests {
             ),
             (vec!["b".to_owned()], Provenance::env("E_")),
             (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["z".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
@@ -128521,7 +128604,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_partial_cover_mixed_fixture_is_false() {
+    fn source_kinds_partial_cover_cli_mixed_fixture_is_false() {
         // Direct pin against the source-kind-histogram-mixed fixture:
         // the fixture attributes 4 leaves as `{Defaults: 2, Env: 1,
         // File: 1}` — every cell observed at least once, so the fold
@@ -128531,7 +128614,7 @@ mod progressive_tests {
         // `source_kinds_full_cover=true` — the fixture pins the
         // `(any_observed, partial_cover, full_cover)` triple at
         // (true, false, true) on the source-kind altitude.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_any_observed());
         assert!(!r.provenance().source_kinds_partial_cover());
         assert!(r.provenance().source_kinds_full_cover());
@@ -128832,14 +128915,14 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_singular_support_mixed_fixture_is_false() {
+    fn source_kinds_singular_support_cli_mixed_fixture_is_false() {
         // Full-cover pin: the source-kind-histogram-mixed fixture
         // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
         // support cardinality `3`, not `1`. So
         // `source_kinds_singular_support` reads `false`, sitting on the
         // full-cover corner. Peer of
-        // `source_kinds_partial_cover_mixed_fixture_is_false`.
-        let r = source_kind_histogram_mixed_fixture();
+        // `source_kinds_partial_cover_cli_mixed_fixture_is_false`.
+        let r = source_kind_cli_mixed_fixture();
         assert!(!r.provenance().source_kinds_singular_support());
         assert!(r.provenance().source_kinds_full_cover());
     }
@@ -129130,7 +129213,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_singular_gap_two_source_kind_fixture_is_true() {
+    fn source_kinds_singular_gap_three_source_kind_fixture_is_true() {
         // Two-source-kind partial cover pin: a fold observing exactly
         // two `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
         // `Env` silent) has support cardinality `2` — one unobserved
@@ -129146,10 +129229,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert_eq!(m.contributing_source_kinds().len(), 3);
         assert!(m.source_kinds_singular_gap());
         assert!(!m.source_kinds_singular_support());
         assert!(m.source_kinds_any_observed());
@@ -129158,7 +129242,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_singular_gap_mixed_fixture_is_false() {
+    fn source_kinds_singular_gap_cli_mixed_fixture_is_false() {
         // Full-cover pin: the source-kind-histogram-mixed fixture
         // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
         // support cardinality `3`, zero unobserved cells (not one). So
@@ -129167,7 +129251,7 @@ mod progressive_tests {
         // `true` side — the two boundaries `singular_gap` and
         // `full_cover` are disjoint at the top of the coverage-support
         // partition.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(!r.provenance().source_kinds_singular_gap());
         assert!(r.provenance().source_kinds_full_cover());
     }
@@ -129507,7 +129591,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_low_support_two_source_kind_partial_cover_is_false() {
+    fn source_kinds_low_support_three_source_kind_partial_cover_is_false() {
         // Two-source-kind partial-cover pin: a fold observing
         // exactly two `ConfigSourceKind` cells (e.g. `Defaults` and
         // `File` with `Env` silent) has support cardinality `2` on
@@ -129527,10 +129611,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert_eq!(m.contributing_source_kinds().len(), 3);
         assert!(m.source_kinds_singular_gap());
         assert!(!m.source_kinds_low_support());
     }
@@ -129549,7 +129634,7 @@ mod progressive_tests {
         // `singular_support`=false, `singular_gap`=false,
         // `full_cover`=true, `partial_cover`=false,
         // `low_support`=false).
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(!r.provenance().source_kinds_low_support());
     }
@@ -129931,7 +130016,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_high_support_two_source_kind_partial_cover_is_true() {
+    fn source_kinds_high_support_three_source_kind_partial_cover_is_true() {
         // Two-source-kind cover pin: a fold observing exactly two
         // `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
         // `Env` silent) has support cardinality `2` on the
@@ -129957,10 +130042,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert_eq!(m.contributing_source_kinds().len(), 3);
         assert!(m.source_kinds_singular_gap());
         assert!(m.source_kinds_high_support());
     }
@@ -129982,7 +130068,7 @@ mod progressive_tests {
         // `singular_gap`=false, `full_cover`=true,
         // `partial_cover`=false, `low_support`=false,
         // `high_support`=true).
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(r.provenance().source_kinds_high_support());
     }
@@ -130475,7 +130561,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_strict_partial_cover_two_source_kind_partial_cover_is_false() {
+    fn source_kinds_strict_partial_cover_three_source_kind_partial_cover_is_false() {
         // Two-source-kind cover pin: a fold observing exactly two
         // `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
         // `Env` silent) has two observed cells and one unobserved
@@ -130499,12 +130585,45 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 3);
+        assert!(m.source_kinds_singular_gap());
+        assert!(!m.source_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_two_source_kind_partial_cover_is_true() {
+        // `ConfigSourceKind::Cli` made the source-kind axis cardinality 4,
+        // so two observed kinds (two absent) is the reachable strict
+        // interior — it was vacuous on the cardinality-3 axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::cli("--set")),
         ]
         .into_iter()
         .collect();
         assert_eq!(m.contributing_source_kinds().len(), 2);
-        assert!(m.source_kinds_singular_gap());
-        assert!(!m.source_kinds_strict_partial_cover());
+        assert!(m.source_kinds_strict_partial_cover());
+        assert!(!m.source_kinds_singular_gap());
+        assert!(!m.source_kinds_singular());
+        assert_eq!(
+            m.source_kind_support_boundary_distance(),
+            crate::SupportBoundaryDistance::StrictInterior,
+        );
+        assert_eq!(
+            m.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::StrictInterior,
+        );
+        assert_eq!(
+            m.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
     }
 
     #[test]
@@ -130520,7 +130639,7 @@ mod progressive_tests {
         // tier altitude and
         // `kinds_strict_partial_cover_uniform_cover_is_false` on the
         // diff altitude.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(!r.provenance().source_kinds_strict_partial_cover());
     }
@@ -131012,7 +131131,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_singular_two_source_kind_fixture_is_true() {
+    fn source_kinds_singular_three_source_kind_fixture_is_true() {
         // Two-source-kind partial cover pin: a fold observing
         // exactly two `ConfigSourceKind` cells (e.g. `Defaults` and
         // `File` with `Env` silent) has support cardinality `2`,
@@ -131028,10 +131147,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert_eq!(m.contributing_source_kinds().len(), 3);
         assert!(m.source_kinds_singular_gap());
         assert!(m.source_kinds_singular());
         assert!(!m.source_kinds_singular_support());
@@ -131039,7 +131159,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_singular_mixed_fixture_is_false() {
+    fn source_kinds_singular_cli_mixed_fixture_is_false() {
         // Full-cover pin: the source-kind-histogram-mixed fixture
         // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
         // support cardinality `3`, zero unobserved cells. So
@@ -131050,7 +131170,7 @@ mod progressive_tests {
         // !source_kinds_singular` on every axis with cardinality
         // `>= 2` — the full-cover top coverage boundary sits
         // outside the singular near-boundary corner.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(!r.provenance().source_kinds_singular());
         assert!(!r.provenance().source_kinds_singular_support());
@@ -131452,7 +131572,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_boundary_two_source_kind_fixture_is_false() {
+    fn source_kinds_boundary_three_source_kind_fixture_is_false() {
         // Two-source-kind partial cover pin: a fold observing
         // exactly two `ConfigSourceKind` cells (e.g. `Defaults` and
         // `File` with `Env` silent) has support cardinality `2`,
@@ -131469,10 +131589,11 @@ mod progressive_tests {
                 Provenance::computed(ConfigTierKind::Default),
             ),
             (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
         ]
         .into_iter()
         .collect();
-        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert_eq!(m.contributing_source_kinds().len(), 3);
         assert!(!m.source_kinds_boundary());
         assert!(m.source_kinds_singular());
         assert!(m.source_kinds_any_observed());
@@ -131480,7 +131601,7 @@ mod progressive_tests {
     }
 
     #[test]
-    fn source_kinds_boundary_mixed_fixture_is_true() {
+    fn source_kinds_boundary_cli_mixed_fixture_is_true() {
         // Full-cover pin: the source-kind-histogram-mixed fixture
         // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
         // support cardinality `3`, zero unobserved cells (uniform
@@ -131490,7 +131611,7 @@ mod progressive_tests {
         // `true`. Direct witness of the subsumption
         // `source_kinds_full_cover ⇒ source_kinds_boundary` on every
         // axis via the full-cover disjunct.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert!(r.provenance().source_kinds_full_cover());
         assert!(r.provenance().source_kinds_boundary());
         assert!(!r.provenance().source_kinds_singular());
@@ -143201,7 +143322,7 @@ mod progressive_tests {
         // by the three-cell source-kind axis cardinality on every
         // fixture.
         let k = crate::axis_cardinality::<crate::ConfigSourceKind>();
-        assert_eq!(k, 3);
+        assert_eq!(k, 4);
         for (peak, trough) in [
             Prog::resolve_progressive().source_kind_modality_degree(),
             Nested::resolve_progressive().source_kind_modality_degree(),
@@ -143508,7 +143629,7 @@ mod progressive_tests {
         // Cardinality upper-bound pin: sum <= 2 * 3 on the three-cell
         // source-kind axis (one below the tier altitude's `8`).
         let bound = 2 * crate::axis_cardinality::<crate::ConfigSourceKind>();
-        assert_eq!(bound, 6);
+        assert_eq!(bound, 8);
         assert!(Prog::resolve_progressive().source_kind_modality_degree_sum() <= bound);
         assert!(Nested::resolve_progressive().source_kind_modality_degree_sum() <= bound);
         assert!(source_kind_histogram_mixed_fixture().source_kind_modality_degree_sum() <= bound);
@@ -143777,7 +143898,7 @@ mod progressive_tests {
         // Cardinality upper-bound pin: amp <= 3 on the three-cell
         // source-kind axis (one below the tier altitude's `4`).
         let bound = crate::axis_cardinality::<crate::ConfigSourceKind>();
-        assert_eq!(bound, 3);
+        assert_eq!(bound, 4);
         assert!(Prog::resolve_progressive().source_kind_modality_amplitude() <= bound);
         assert!(Nested::resolve_progressive().source_kind_modality_amplitude() <= bound);
         assert!(source_kind_histogram_mixed_fixture().source_kind_modality_amplitude() <= bound);
@@ -144598,17 +144719,17 @@ mod progressive_tests {
     }
 
     #[test]
-    fn prog_source_kind_support_cardinality_class_mixed_fixture_is_full_cover() {
+    fn prog_source_kind_support_cardinality_class_cli_mixed_fixture_is_full_cover() {
         // Mixed fixture: one env overlay (touching c) + one file
         // overlay (touching b) atop Prog's progressive fold. Per-leaf
         // source-kinds: a → Defaults, b → File, c → Env, d → Defaults —
         // every cell of the three-cell ConfigSourceKind axis is
         // observed. distinct_cells = 3 = axis_cardinality → FullCover.
         // Direct container-altitude witness of the shipped
-        // `source_kind_histogram_mixed_overlays_cover_every_cell`
+        // `source_kind_histogram_mixed_overlays_cover_every_non_cli_cell`
         // primitive pin one altitude down.
-        let r = source_kind_histogram_mixed_fixture();
-        assert_eq!(r.source_kind_histogram().distinct_cells(), 3);
+        let r = source_kind_cli_mixed_fixture();
+        assert_eq!(r.source_kind_histogram().distinct_cells(), 4);
         assert_eq!(
             r.source_kind_support_cardinality_class(),
             crate::SupportCardinalityClass::FullCover,
@@ -145017,13 +145138,13 @@ mod progressive_tests {
     }
 
     #[test]
-    fn prog_source_kind_support_boundary_distance_mixed_fixture_is_boundary() {
+    fn prog_source_kind_support_boundary_distance_cli_mixed_fixture_is_boundary() {
         // Mixed fixture: source-kind FullCover (distinct_cells = 3 =
         // axis_cardinality — every cell of the three-cell
         // ConfigSourceKind axis observed) projects to the Boundary
         // bucket via the class-side three-bucket fold that pairs
         // Empty + FullCover as the two boundary corners.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(
             r.source_kind_support_cardinality_class(),
             crate::SupportCardinalityClass::FullCover,
@@ -145154,11 +145275,11 @@ mod progressive_tests {
     }
 
     #[test]
-    fn prog_source_kind_support_cardinality_class_ordinal_mixed_fixture_is_four() {
+    fn prog_source_kind_support_cardinality_class_ordinal_cli_mixed_fixture_is_four() {
         // Mixed-fixture literal pin: source-kind FullCover on the
         // cardinality-3 axis projects to ordinal `4` at the container
         // altitude.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.source_kind_support_cardinality_class_ordinal(), 4);
     }
 
@@ -145279,12 +145400,12 @@ mod progressive_tests {
     }
 
     #[test]
-    fn prog_source_kind_support_boundary_distance_ordinal_mixed_fixture_is_zero() {
+    fn prog_source_kind_support_boundary_distance_ordinal_cli_mixed_fixture_is_zero() {
         // Mixed-fixture literal pin: source-kind FullCover on the
         // cardinality-3 axis projects to Boundary (ordinal `0`) at the
         // container altitude — the Empty + FullCover pair collapses to
         // the boundary bucket.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(r.source_kind_support_boundary_distance_ordinal(), 0);
     }
 
@@ -145597,11 +145718,11 @@ mod progressive_tests {
     }
 
     #[test]
-    fn prog_source_kind_support_magnitude_direction_mixed_fixture_is_high() {
+    fn prog_source_kind_support_magnitude_direction_cli_mixed_fixture_is_high() {
         // Mixed fixture: source-kind FullCover (distinct_cells = 3 =
         // axis_cardinality — one of the two high-support corners on
         // the cardinality-`3` axis) projects to High.
-        let r = source_kind_histogram_mixed_fixture();
+        let r = source_kind_cli_mixed_fixture();
         assert_eq!(
             r.source_kind_support_cardinality_class(),
             crate::SupportCardinalityClass::FullCover,

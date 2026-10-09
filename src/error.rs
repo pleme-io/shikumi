@@ -4230,6 +4230,16 @@ impl AttributionCoordinates {
             confidence: AttributionConfidence::Fallback,
         },
         Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Cli,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Cli,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
             axis: AttributionAxis::MetadataName,
             layer_kind: ConfigSourceKind::Defaults,
             confidence: AttributionConfidence::Exact,
@@ -4257,6 +4267,16 @@ impl AttributionCoordinates {
         Self {
             axis: AttributionAxis::MetadataName,
             layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Cli,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Cli,
             confidence: AttributionConfidence::Fallback,
         },
     ];
@@ -4986,7 +5006,7 @@ impl AttributionSourceKindCoordinates {
     /// test pins the realizable half as the exact image of
     /// [`AttributionRule::attribution_source_kind_coordinates`] over
     /// [`AttributionRule::ALL`], and the
-    /// `attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_7_unrealizable`
+    /// `attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_10_unrealizable`
     /// test pins the cardinality split.
     pub const ALL: &'static [Self] = &[
         Self {
@@ -5002,6 +5022,10 @@ impl AttributionSourceKindCoordinates {
             layer_kind: ConfigSourceKind::File,
         },
         Self {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::Cli,
+        },
+        Self {
             figment_source_kind: FigmentSourceKind::Code,
             layer_kind: ConfigSourceKind::Defaults,
         },
@@ -5014,6 +5038,10 @@ impl AttributionSourceKindCoordinates {
             layer_kind: ConfigSourceKind::File,
         },
         Self {
+            figment_source_kind: FigmentSourceKind::Code,
+            layer_kind: ConfigSourceKind::Cli,
+        },
+        Self {
             figment_source_kind: FigmentSourceKind::Custom,
             layer_kind: ConfigSourceKind::Defaults,
         },
@@ -5024,6 +5052,10 @@ impl AttributionSourceKindCoordinates {
         Self {
             figment_source_kind: FigmentSourceKind::Custom,
             layer_kind: ConfigSourceKind::File,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::Cli,
         },
     ];
 
@@ -5411,7 +5443,7 @@ impl AttributionNameKindCoordinates {
     /// test pins the realizable half as the exact image of
     /// [`AttributionRule::attribution_name_kind_coordinates`] over
     /// [`AttributionRule::ALL`], and the
-    /// `attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_4_unrealizable`
+    /// `attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_6_unrealizable`
     /// test pins the cardinality split.
     pub const ALL: &'static [Self] = &[
         Self {
@@ -5427,6 +5459,10 @@ impl AttributionNameKindCoordinates {
             layer_kind: ConfigSourceKind::File,
         },
         Self {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::Cli,
+        },
+        Self {
             figment_name_tag_kind: FigmentNameTagKind::Env,
             layer_kind: ConfigSourceKind::Defaults,
         },
@@ -5437,6 +5473,10 @@ impl AttributionNameKindCoordinates {
         Self {
             figment_name_tag_kind: FigmentNameTagKind::Env,
             layer_kind: ConfigSourceKind::File,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::Cli,
         },
     ];
 
@@ -21910,8 +21950,8 @@ mod tests {
             );
         }
         assert_eq!(
-            unrecognized_count, 7,
-            "the 12-cell cube must contain exactly 7 unrecognized cells; got: {unrecognized_count}",
+            unrecognized_count, 11,
+            "the 16-cell cube must contain exactly 11 unrecognized cells; got: {unrecognized_count}",
         );
     }
 
@@ -22051,8 +22091,8 @@ mod tests {
         // a silent rebalance.
         assert_eq!(
             AttributionCoordinates::ALL.len(),
-            12,
-            "AttributionCoordinates::ALL cardinality must be 12 today; \
+            16,
+            "AttributionCoordinates::ALL cardinality must be 16 today; \
              got: {}",
             AttributionCoordinates::ALL.len(),
         );
@@ -22168,7 +22208,7 @@ mod tests {
         // `format_coordinates_ordinal_reuses_declaration_order` on the
         // sibling two-axis cube, extended here onto the twelve-cell
         // three-axis cube.
-        let expected: [(AttributionCoordinates, usize); 12] = [
+        let expected: [(AttributionCoordinates, usize); 16] = [
             (
                 AttributionCoordinates {
                     axis: AttributionAxis::MetadataSource,
@@ -22219,16 +22259,16 @@ mod tests {
             ),
             (
                 AttributionCoordinates {
-                    axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::Defaults,
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Cli,
                     confidence: AttributionConfidence::Exact,
                 },
                 6,
             ),
             (
                 AttributionCoordinates {
-                    axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::Defaults,
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Cli,
                     confidence: AttributionConfidence::Fallback,
                 },
                 7,
@@ -22236,7 +22276,7 @@ mod tests {
             (
                 AttributionCoordinates {
                     axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::Env,
+                    layer_kind: ConfigSourceKind::Defaults,
                     confidence: AttributionConfidence::Exact,
                 },
                 8,
@@ -22244,7 +22284,7 @@ mod tests {
             (
                 AttributionCoordinates {
                     axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::Env,
+                    layer_kind: ConfigSourceKind::Defaults,
                     confidence: AttributionConfidence::Fallback,
                 },
                 9,
@@ -22252,7 +22292,7 @@ mod tests {
             (
                 AttributionCoordinates {
                     axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::File,
+                    layer_kind: ConfigSourceKind::Env,
                     confidence: AttributionConfidence::Exact,
                 },
                 10,
@@ -22260,10 +22300,42 @@ mod tests {
             (
                 AttributionCoordinates {
                     axis: AttributionAxis::MetadataName,
-                    layer_kind: ConfigSourceKind::File,
+                    layer_kind: ConfigSourceKind::Env,
                     confidence: AttributionConfidence::Fallback,
                 },
                 11,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Exact,
+                },
+                12,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                13,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Cli,
+                    confidence: AttributionConfidence::Exact,
+                },
+                14,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Cli,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                15,
             ),
         ];
         for (cell, want) in expected {
@@ -22605,7 +22677,7 @@ mod tests {
     }
 
     #[test]
-    fn attribution_coordinates_realizable_partitions_into_5_realizable_and_7_unrealizable() {
+    fn attribution_coordinates_realizable_partitions_into_5_realizable_and_11_unrealizable() {
         // Pins the 5 + 7 cardinality split:
         // - 5 realizable cells, one per recognized AttributionRule
         //   (FileBySource, FileByMetadataName, EnvByPrefix,
@@ -22641,7 +22713,7 @@ mod tests {
         // Pin the concrete current values too — the partition is 5 + 7
         // today; future rule additions move both counts in lockstep.
         assert_eq!(realizable, 5);
-        assert_eq!(unrealizable, 7);
+        assert_eq!(unrealizable, 11);
     }
 
     #[test]
@@ -23599,6 +23671,7 @@ mod tests {
                 ConfigSourceKind::File => ConfigSource::File(PathBuf::from("/etc/app.yaml")),
                 ConfigSourceKind::Env => ConfigSource::Env("APP_".to_owned()),
                 ConfigSourceKind::Defaults => ConfigSource::Defaults,
+                ConfigSourceKind::Cli => ConfigSource::Cli("--set".to_owned()),
             };
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(
@@ -24311,8 +24384,8 @@ mod tests {
         );
         assert_eq!(
             AttributionSourceKindCoordinates::ALL.len(),
-            9,
-            "ALL must have 3 * 3 = 9 cells today",
+            12,
+            "ALL must have 3 * 4 = 12 cells today",
         );
     }
 
@@ -24508,7 +24581,7 @@ mod tests {
     }
 
     #[test]
-    fn attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_7_unrealizable()
+    fn attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_10_unrealizable()
      {
         // Pins the 2 + 7 cardinality split:
         // - 2 realizable cells on the structural diagonal of source-
@@ -24530,7 +24603,7 @@ mod tests {
             .filter(|c| !c.is_realizable())
             .count();
         assert_eq!(realizable, 2, "realizable cells must be 2");
-        assert_eq!(unrealizable, 7, "unrealizable cells must be 7");
+        assert_eq!(unrealizable, 10, "unrealizable cells must be 10");
         assert_eq!(
             realizable + unrealizable,
             AttributionSourceKindCoordinates::ALL.len(),
@@ -24936,7 +25009,7 @@ mod tests {
                 layer_kind: ConfigSourceKind::Defaults,
             }
             .ordinal(),
-            6,
+            8,
         );
         assert_eq!(
             AttributionSourceKindCoordinates {
@@ -24944,7 +25017,7 @@ mod tests {
                 layer_kind: ConfigSourceKind::File,
             }
             .ordinal(),
-            8,
+            10,
         );
     }
 
@@ -25000,8 +25073,8 @@ mod tests {
 
         assert_eq!(ORD_FILE_DEF, 0);
         assert_eq!(ORD_FILE_FILE, 2);
-        assert_eq!(ORD_CUSTOM_DEF, 6);
-        assert_eq!(ORD_CUSTOM_FILE, 8);
+        assert_eq!(ORD_CUSTOM_DEF, 8);
+        assert_eq!(ORD_CUSTOM_FILE, 10);
 
         // Cross-check: the const-fn projection stays pointwise equal on
         // every cell in `AttributionSourceKindCoordinates::ALL` to its
@@ -25139,8 +25212,8 @@ mod tests {
             AttributionSourceKindCoordinates::from_ordinal(0);
         const INV_2: Option<AttributionSourceKindCoordinates> =
             AttributionSourceKindCoordinates::from_ordinal(2);
-        const INV_8: Option<AttributionSourceKindCoordinates> =
-            AttributionSourceKindCoordinates::from_ordinal(8);
+        const INV_10: Option<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::from_ordinal(10);
         const INV_OOR: Option<AttributionSourceKindCoordinates> =
             AttributionSourceKindCoordinates::from_ordinal(
                 AttributionSourceKindCoordinates::ALL.len(),
@@ -25161,7 +25234,7 @@ mod tests {
             }),
         );
         assert_eq!(
-            INV_8,
+            INV_10,
             Some(AttributionSourceKindCoordinates {
                 figment_source_kind: FigmentSourceKind::Custom,
                 layer_kind: ConfigSourceKind::File,
@@ -25208,8 +25281,8 @@ mod tests {
         );
         assert_eq!(
             AttributionNameKindCoordinates::ALL.len(),
-            6,
-            "ALL must have 2 * 3 = 6 cells today",
+            8,
+            "ALL must have 2 * 4 = 8 cells today",
         );
     }
 
@@ -25506,7 +25579,7 @@ mod tests {
                 layer_kind: ConfigSourceKind::Defaults,
             }
             .ordinal(),
-            3,
+            4,
         );
         assert_eq!(
             AttributionNameKindCoordinates {
@@ -25514,7 +25587,7 @@ mod tests {
                 layer_kind: ConfigSourceKind::File,
             }
             .ordinal(),
-            5,
+            6,
         );
     }
 
@@ -25571,8 +25644,8 @@ mod tests {
 
         assert_eq!(ORD_FORMAT_DEF, 0);
         assert_eq!(ORD_FORMAT_FILE, 2);
-        assert_eq!(ORD_ENV_DEF, 3);
-        assert_eq!(ORD_ENV_FILE, 5);
+        assert_eq!(ORD_ENV_DEF, 4);
+        assert_eq!(ORD_ENV_FILE, 6);
 
         // Cross-check: the const-fn projection stays pointwise equal on
         // every cell in `AttributionNameKindCoordinates::ALL` to its
@@ -25714,8 +25787,8 @@ mod tests {
             AttributionNameKindCoordinates::from_ordinal(0);
         const INV_2: Option<AttributionNameKindCoordinates> =
             AttributionNameKindCoordinates::from_ordinal(2);
-        const INV_5: Option<AttributionNameKindCoordinates> =
-            AttributionNameKindCoordinates::from_ordinal(5);
+        const INV_6: Option<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::from_ordinal(6);
         const INV_OOR: Option<AttributionNameKindCoordinates> =
             AttributionNameKindCoordinates::from_ordinal(AttributionNameKindCoordinates::ALL.len());
 
@@ -25734,7 +25807,7 @@ mod tests {
             }),
         );
         assert_eq!(
-            INV_5,
+            INV_6,
             Some(AttributionNameKindCoordinates {
                 figment_name_tag_kind: FigmentNameTagKind::Env,
                 layer_kind: ConfigSourceKind::File,
@@ -25744,7 +25817,7 @@ mod tests {
     }
 
     #[test]
-    fn attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_4_unrealizable()
+    fn attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_6_unrealizable()
      {
         // Pins the 2 + 4 cardinality split:
         // - 2 realizable cells on the structural diagonal of name-axis
@@ -25765,7 +25838,7 @@ mod tests {
             .filter(|c| !c.is_realizable())
             .count();
         assert_eq!(realizable, 2, "realizable cells must be 2");
-        assert_eq!(unrealizable, 4, "unrealizable cells must be 4");
+        assert_eq!(unrealizable, 6, "unrealizable cells must be 6");
         assert_eq!(
             realizable + unrealizable,
             AttributionNameKindCoordinates::ALL.len(),
