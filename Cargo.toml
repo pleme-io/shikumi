@@ -248,8 +248,11 @@ kanchi = { version = "0.1", optional = true }
 # git `http.extraheader` basic-auth encoding (`github` feature).
 base64 = { version = "0.22", optional = true }
 # RS256 JWT signing for GitHub App installation tokens (`github` feature only).
-# 9.x signs through ring, which reqwest's rustls stack already brings in.
-jsonwebtoken = { version = "9", optional = true }
+# 10.x takes its crypto provider as a feature: aws_lc_rs, which the rustls stack
+# already brings in (rust_crypto would add the `rsa` crate, itself under an
+# unfixed advisory). 9.x had a type-confusion authorization bypass
+# (GHSA-h395-gr6q-cpjc, fixed in 10.3.0).
+jsonwebtoken = { version = "10.3", optional = true, default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # macOS opts into the FSEvents backend for notify. The target-gate is still
 # required: Cargo unifies features per-target, so a bare `[dependencies]` line
