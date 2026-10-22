@@ -591,6 +591,11 @@ rec {
             usesDefaultFeatures = false;
           }
           {
+            name = "untrusted";
+            packageId = "untrusted 0.7.1";
+            optional = true;
+          }
+          {
             name = "zeroize";
             packageId = "zeroize";
           }
@@ -607,7 +612,7 @@ rec {
           "ring-io" = [ "dep:untrusted" ];
           "ring-sig-verify" = [ "dep:untrusted" ];
         };
-        resolvedDefaultFeatures = [ "aws-lc-sys" "prebuilt-nasm" ];
+        resolvedDefaultFeatures = [ "alloc" "aws-lc-sys" "default" "prebuilt-nasm" "ring-io" "ring-sig-verify" ];
       };
       "aws-lc-sys" = rec {
         crateName = "aws-lc-sys";
@@ -5591,16 +5596,26 @@ rec {
       };
       "jsonwebtoken" = rec {
         crateName = "jsonwebtoken";
-        version = "9.3.1";
-        edition = "2021";
-        sha256 = "1plx2qf8mpg96bpsa1aalfsf4jvgwcnl6i37x7masysk91xcr1ss";
+        version = "10.4.0";
+        edition = "2024";
+        sha256 = "1z649wrq8mnglsklll15dnrcji8py3x744236hzcmspx9zxjp8zb";
         authors = [
           "Vincent Prouillet <hello@vincentprouillet.com>"
         ];
         dependencies = [
           {
+            name = "aws-lc-rs";
+            packageId = "aws-lc-rs";
+            optional = true;
+          }
+          {
             name = "base64";
             packageId = "base64 0.22.1";
+          }
+          {
+            name = "getrandom";
+            packageId = "getrandom 0.2.17";
+            target = { target, features }: ("wasm32" == target."arch" or null);
           }
           {
             name = "js-sys";
@@ -5613,18 +5628,6 @@ rec {
             optional = true;
           }
           {
-            name = "ring";
-            packageId = "ring";
-            target = { target, features }: (!("wasm32" == target."arch" or null));
-            features = [ "std" ];
-          }
-          {
-            name = "ring";
-            packageId = "ring";
-            target = { target, features }: ("wasm32" == target."arch" or null);
-            features = [ "std" "wasm32_unknown_unknown_js" ];
-          }
-          {
             name = "serde";
             packageId = "serde";
             features = [ "derive" ];
@@ -5634,18 +5637,38 @@ rec {
             packageId = "serde_json";
           }
           {
+            name = "signature";
+            packageId = "signature";
+            features = [ "std" ];
+          }
+          {
             name = "simple_asn1";
             packageId = "simple_asn1";
             optional = true;
           }
+          {
+            name = "zeroize";
+            packageId = "zeroize";
+            features = [ "derive" ];
+          }
         ];
         features = {
+          "aws-lc-rs" = [ "dep:aws-lc-rs" ];
+          "aws_lc_rs" = [ "aws-lc-rs" ];
           "default" = [ "use_pem" ];
+          "ed25519-dalek" = [ "dep:ed25519-dalek" ];
+          "hmac" = [ "dep:hmac" ];
+          "p256" = [ "dep:p256" ];
+          "p384" = [ "dep:p384" ];
           "pem" = [ "dep:pem" ];
+          "rand" = [ "dep:rand" ];
+          "rsa" = [ "dep:rsa" ];
+          "rust_crypto" = [ "ed25519-dalek" "hmac" "p256" "p384" "rand" "rsa" "sha2" ];
+          "sha2" = [ "dep:sha2" ];
           "simple_asn1" = [ "dep:simple_asn1" ];
           "use_pem" = [ "pem" "simple_asn1" ];
         };
-        resolvedDefaultFeatures = [ "default" "pem" "simple_asn1" "use_pem" ];
+        resolvedDefaultFeatures = [ "aws-lc-rs" "aws_lc_rs" "pem" "simple_asn1" "use_pem" ];
       };
       "kanchi" = rec {
         crateName = "kanchi";
@@ -8894,7 +8917,7 @@ rec {
           }
           {
             name = "untrusted";
-            packageId = "untrusted";
+            packageId = "untrusted 0.9.0";
           }
           {
             name = "windows-sys";
@@ -8923,7 +8946,7 @@ rec {
           "std" = [ "alloc" ];
           "wasm32_unknown_unknown_js" = [ "getrandom/js" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "default" "dev_urandom_fallback" "std" "wasm32_unknown_unknown_js" ];
+        resolvedDefaultFeatures = [ "alloc" "default" "dev_urandom_fallback" "wasm32_unknown_unknown_js" ];
       };
       "rsa" = rec {
         crateName = "rsa";
@@ -9338,7 +9361,7 @@ rec {
           }
           {
             name = "untrusted";
-            packageId = "untrusted";
+            packageId = "untrusted 0.9.0";
           }
         ];
         features = {
@@ -9375,7 +9398,7 @@ rec {
           }
           {
             name = "untrusted";
-            packageId = "untrusted";
+            packageId = "untrusted 0.9.0";
           }
         ];
         features = {
@@ -9631,7 +9654,7 @@ rec {
           }
           {
             name = "untrusted";
-            packageId = "untrusted";
+            packageId = "untrusted 0.9.0";
           }
         ];
 
@@ -10215,7 +10238,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.1082";
+        version = "0.1.1083";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10281,6 +10304,8 @@ rec {
             name = "jsonwebtoken";
             packageId = "jsonwebtoken";
             optional = true;
+            usesDefaultFeatures = false;
+            features = [ "aws_lc_rs" "use_pem" ];
           }
           {
             name = "kanchi";
@@ -10717,7 +10742,7 @@ rec {
           "proc-macro" = [ "proc-macro2/proc-macro" "quote?/proc-macro" ];
           "test" = [ "syn-test-suite/all-features" ];
         };
-        resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "visit-mut" ];
+        resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "visit" "visit-mut" ];
       };
       "syn 3.0.6" = rec {
         crateName = "syn";
@@ -11968,7 +11993,18 @@ rec {
         ];
 
       };
-      "untrusted" = rec {
+      "untrusted 0.7.1" = rec {
+        crateName = "untrusted";
+        version = "0.7.1";
+        edition = "2018";
+        sha256 = "0jkbqaj9d3v5a91pp3wp9mffvng1nhycx6sh4qkdd9qyr62ccmm1";
+        libPath = "src/untrusted.rs";
+        authors = [
+          "Brian Smith <brian@briansmith.org>"
+        ];
+
+      };
+      "untrusted 0.9.0" = rec {
         crateName = "untrusted";
         version = "0.9.0";
         edition = "2018";
@@ -14323,6 +14359,13 @@ rec {
         authors = [
           "The RustCrypto Project Developers"
         ];
+        dependencies = [
+          {
+            name = "zeroize_derive";
+            packageId = "zeroize_derive";
+            optional = true;
+          }
+        ];
         features = {
           "default" = [ "alloc" ];
           "derive" = [ "zeroize_derive" ];
@@ -14330,7 +14373,33 @@ rec {
           "std" = [ "alloc" ];
           "zeroize_derive" = [ "dep:zeroize_derive" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "default" ];
+        resolvedDefaultFeatures = [ "alloc" "default" "derive" "zeroize_derive" ];
+      };
+      "zeroize_derive" = rec {
+        crateName = "zeroize_derive";
+        version = "1.5.0";
+        edition = "2024";
+        sha256 = "0a7kq8srk81pn23xqn7c9jw1jpnfy41ffn802x1zrqqgpdf6al1w";
+        procMacro = true;
+        authors = [
+          "The RustCrypto Project Developers"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+          }
+          {
+            name = "syn";
+            packageId = "syn 2.0.119";
+            features = [ "full" "extra-traits" "visit" ];
+          }
+        ];
+
       };
       "zerotrie" = rec {
         crateName = "zerotrie";
