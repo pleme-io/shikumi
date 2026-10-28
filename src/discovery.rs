@@ -8456,8 +8456,8 @@ mod tests {
         // renderer. Closes the (Serialize, Deserialize) idiom-peer of
         // the existing (Display, FromStr) round-trip on Format.
         for &f in Format::ALL {
-            let yaml = serde_yaml::to_string(&f).unwrap();
-            let parsed: Format = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&f).unwrap();
+            let parsed: Format = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {f:?} failed: {e}"));
             assert_eq!(
                 parsed, f,
@@ -8500,7 +8500,7 @@ mod tests {
         for &f in Format::ALL {
             let upper = f.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: Format = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: Format = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {f:?} must deserialize: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(parsed, f);
@@ -8521,7 +8521,7 @@ mod tests {
         ];
         for &(alias, expected) in cases {
             let yaml = format!("\"{alias}\"\n");
-            let parsed: Format = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: Format = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("alias `{alias}` must deserialize to {expected:?}: {e}")
             });
             assert_eq!(
@@ -8543,7 +8543,7 @@ mod tests {
         // matching on the parse error variant.
         let sentinel = "__shikumi_unknown_format_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<Format, _> = serde_yaml::from_str(&yaml);
+        let result: Result<Format, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -10622,8 +10622,8 @@ mod tests {
         // idiom-peer of the (Display, FromStr) round-trip on
         // FormatProvenance, mirroring the same pin on Format.
         for p in FormatProvenance::ALL.iter().copied() {
-            let yaml = serde_yaml::to_string(&p).unwrap();
-            let parsed: FormatProvenance = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&p).unwrap();
+            let parsed: FormatProvenance = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {p:?} failed: {e}"));
             assert_eq!(
                 parsed, p,
@@ -10664,7 +10664,7 @@ mod tests {
         for p in FormatProvenance::ALL.iter().copied() {
             let upper = p.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: FormatProvenance = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: FormatProvenance = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {p:?} must deserialize: {e}\n  yaml: {yaml:?}",)
             });
             assert_eq!(parsed, p);
@@ -10681,7 +10681,7 @@ mod tests {
         // offending substring named in the rendered diagnostic.
         let sentinel = "__shikumi_unknown_provenance_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<FormatProvenance, _> = serde_yaml::from_str(&yaml);
+        let result: Result<FormatProvenance, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -12640,8 +12640,8 @@ mod tests {
         // and deserializes back to the same cell. The round-trip holds
         // across the full 8-cell cube.
         for cell in FormatCoordinates::ALL.iter().copied() {
-            let yaml = serde_yaml::to_string(&cell).unwrap();
-            let parsed: FormatCoordinates = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&cell).unwrap();
+            let parsed: FormatCoordinates = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {cell:?} failed: {e}"));
             assert_eq!(
                 parsed, cell,
@@ -12683,7 +12683,7 @@ mod tests {
         for cell in FormatCoordinates::ALL.iter().copied() {
             let upper = format!("{cell}").to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: FormatCoordinates = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: FormatCoordinates = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {cell:?} must deserialize: {e}\n  yaml: {yaml:?}",)
             });
             assert_eq!(parsed, cell);
@@ -12699,7 +12699,7 @@ mod tests {
         // serde side with the offending format substring named in the
         // rendered diagnostic.
         let yaml = "\"vault:shikumi-built\"\n";
-        let result: Result<FormatCoordinates, _> = serde_yaml::from_str(yaml);
+        let result: Result<FormatCoordinates, _> = serde_norway::from_str(yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -12720,7 +12720,7 @@ mod tests {
         // serde side with the offending provenance substring named in
         // the rendered diagnostic.
         let yaml = "\"yaml:upstream-figment\"\n";
-        let result: Result<FormatCoordinates, _> = serde_yaml::from_str(yaml);
+        let result: Result<FormatCoordinates, _> = serde_norway::from_str(yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");

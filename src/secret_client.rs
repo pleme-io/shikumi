@@ -11679,9 +11679,9 @@ mod tests {
         // Deserialize) idiom-peer of the (Display, FromStr) stdlib
         // pair on the operation axis primitive.
         for op in SecretOperation::ALL {
-            let yaml = serde_yaml::to_string(op).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(op).expect("Serialize must succeed");
             let parsed: SecretOperation =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *op, "serde_yaml round-trip must preserve {op:?}");
         }
     }
@@ -11713,7 +11713,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: SecretOperation =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -11728,7 +11728,7 @@ mod tests {
         // rendered message, lifted through ShikumiError::Parse's
         // Display impl.
         for bad in &["metadata", "versions", "describe", "purge"] {
-            let err = serde_yaml::from_str::<SecretOperation>(bad)
+            let err = serde_norway::from_str::<SecretOperation>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -11753,7 +11753,7 @@ mod tests {
             (SecretOperation::GetVersion, "get_version\n"),
         ];
         for (op, expected) in pairs {
-            let yaml = serde_yaml::to_string(op).unwrap();
+            let yaml = serde_norway::to_string(op).unwrap();
             assert_eq!(yaml, *expected, "YAML emission mismatch for {op:?}");
         }
     }
@@ -13780,9 +13780,9 @@ mod tests {
         // Deserialize) idiom-peer of the (Display, FromStr) stdlib
         // pair on the secret-client error-variant axis kind primitive.
         for k in SecretErrorKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: SecretErrorKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -13813,7 +13813,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: SecretErrorKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -13828,7 +13828,7 @@ mod tests {
         // verbatim in the rendered message, lifted through
         // ShikumiError::Parse's Display impl.
         for bad in &["timeout", "rate-limit", "transport", "denied"] {
-            let err = serde_yaml::from_str::<SecretErrorKind>(bad)
+            let err = serde_norway::from_str::<SecretErrorKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -13852,7 +13852,7 @@ mod tests {
             (SecretErrorKind::Shikumi, "shikumi\n"),
         ];
         for (k, expected) in pairs {
-            let yaml = serde_yaml::to_string(k).unwrap();
+            let yaml = serde_norway::to_string(k).unwrap();
             assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
         }
     }
@@ -16395,9 +16395,9 @@ mod tests {
         // manifest recording the client kind of a resolved secret)
         // round-trips without a consumer-side rename helper.
         for k in SecretClientKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: SecretClientKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -16435,7 +16435,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: SecretClientKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -16455,7 +16455,7 @@ mod tests {
         // (commit `94f8a8b`), and ConfigSourceKind's serde surface
         // (commit `e0b96d1`).
         for bad in &["aws", "gcp", "kubernetes", "keychain"] {
-            let err = serde_yaml::from_str::<SecretClientKind>(bad)
+            let err = serde_norway::from_str::<SecretClientKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -16484,7 +16484,7 @@ mod tests {
             (SecretClientKind::GcpSecretManager, "gcp-secret-manager\n"),
         ];
         for (k, expected) in pairs {
-            let yaml = serde_yaml::to_string(k).unwrap();
+            let yaml = serde_norway::to_string(k).unwrap();
             assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
         }
     }

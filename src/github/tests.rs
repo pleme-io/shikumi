@@ -64,7 +64,7 @@ struct Wrapper {
 
 #[test]
 fn the_documented_yaml_parses_to_the_documented_chain() {
-    let parsed: Wrapper = serde_yaml::from_str(CHAIN_YAML).unwrap();
+    let parsed: Wrapper = serde_norway::from_str(CHAIN_YAML).unwrap();
     let GithubAuth::Chain(items) = &parsed.github_auth else {
         panic!("expected chain, got {:?}", parsed.github_auth);
     };
@@ -95,9 +95,9 @@ fn the_documented_yaml_parses_to_the_documented_chain() {
 
 #[test]
 fn the_documented_yaml_round_trips() {
-    let parsed: Wrapper = serde_yaml::from_str(CHAIN_YAML).unwrap();
-    let emitted = serde_yaml::to_string(&parsed).unwrap();
-    let reparsed: Wrapper = serde_yaml::from_str(&emitted).unwrap();
+    let parsed: Wrapper = serde_norway::from_str(CHAIN_YAML).unwrap();
+    let emitted = serde_norway::to_string(&parsed).unwrap();
+    let reparsed: Wrapper = serde_norway::from_str(&emitted).unwrap();
     assert_eq!(
         serde_json::to_value(&parsed).unwrap(),
         serde_json::to_value(&reparsed).unwrap(),
@@ -143,13 +143,13 @@ fn every_variant_serializes_externally_tagged_snake_case() {
 
 #[test]
 fn gh_cli_host_defaults_to_github_com() {
-    let auth: GithubAuth = serde_yaml::from_str("gh_cli: {}").unwrap();
+    let auth: GithubAuth = serde_norway::from_str("gh_cli: {}").unwrap();
     assert!(matches!(auth, GithubAuth::GhCli { host } if host == DEFAULT_GITHUB_HOST));
 }
 
 #[test]
 fn app_ids_accept_a_secret_source() {
-    let auth: GithubAuth = serde_yaml::from_str(
+    let auth: GithubAuth = serde_norway::from_str(
         "app: { app_id: { file: /run/secrets/app-id }, installation_id: { env: INST }, private_key: { env: PEM } }",
     )
     .unwrap();
@@ -168,7 +168,7 @@ fn app_ids_accept_a_secret_source() {
 
 #[test]
 fn app_rejects_unknown_fields() {
-    let err = serde_yaml::from_str::<GithubAuth>(
+    let err = serde_norway::from_str::<GithubAuth>(
         "app: { app_id: 1, private_key: { env: PEM }, installation: 3 }",
     )
     .unwrap_err();

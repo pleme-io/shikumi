@@ -84,7 +84,7 @@ impl ConfigCoverage {
     /// single leaf (the whole list is one knob).
     #[must_use]
     pub fn schema_leaf_paths<T: TieredConfig>() -> Vec<String> {
-        let value = serde_yaml::to_value(T::prescribed_default())
+        let value = serde_norway::to_value(T::prescribed_default())
             .expect("TieredConfig::prescribed_default must serialise to YAML");
         let mut out = Vec::new();
         collect_leaves(&value, &mut String::new(), &mut out);
@@ -143,7 +143,7 @@ impl ConfigCoverage {
     /// meant, not just that an unknown key exists somewhere.
     ///
     /// The canonical use is a `#[test]` in the consuming crate that
-    /// loads each shipped example config through `serde_yaml::from_str`
+    /// loads each shipped example config through `serde_norway::from_str`
     /// and asserts it audits clean, so a schema-renamed field caught in
     /// docs but forgotten in the sample config surfaces at test time
     /// instead of at first-run time. Layered above [`Self::audit_value`]
@@ -153,7 +153,7 @@ impl ConfigCoverage {
     ///
     /// Panics with the readable diff described above when [`Self::audit_value`]
     /// surfaces any leaf path in `value` that is not a schema leaf of `T`.
-    pub fn assert_no_unknown_keys<T: TieredConfig>(value: &serde_yaml::Value) {
+    pub fn assert_no_unknown_keys<T: TieredConfig>(value: &serde_norway::Value) {
         let audit = Self::audit_value::<T>(value);
         assert!(
             audit.is_clean(),
@@ -184,7 +184,7 @@ impl ConfigCoverage {
     #[must_use]
     pub fn health_report<T, K, V>(
         consumed: &[&str],
-        value: &serde_yaml::Value,
+        value: &serde_norway::Value,
         env_prefix: &str,
         env: &[(K, V)],
     ) -> HealthReport
@@ -229,7 +229,7 @@ impl ConfigCoverage {
     /// unknown prefixed env var).
     pub fn assert_healthy<T, K, V>(
         consumed: &[&str],
-        value: &serde_yaml::Value,
+        value: &serde_norway::Value,
         env_prefix: &str,
         env: &[(K, V)],
     ) where
@@ -506,8 +506,8 @@ impl ConfigCoverage {
     }
 
     /// Audit a deserialized config value (typically what
-    /// `serde_yaml::from_str` returns from the operator's YAML/TOML
-    /// file — but any `serde_yaml::Value` shape works, including one
+    /// `serde_norway::from_str` returns from the operator's YAML/TOML
+    /// file — but any `serde_norway::Value` shape works, including one
     /// crossed over from `toml::Value` via serde) for dotted leaf paths
     /// that do not correspond to any schema leaf of `T`. Each unknown
     /// key is paired with a "did you mean" hint: the closest schema
@@ -534,7 +534,7 @@ impl ConfigCoverage {
     /// specific extractor (walk the value tree, wrap each `PathHint`
     /// as a `ValueKeyHint`).
     #[must_use]
-    pub fn audit_value<T: TieredConfig>(value: &serde_yaml::Value) -> ValueAudit {
+    pub fn audit_value<T: TieredConfig>(value: &serde_norway::Value) -> ValueAudit {
         let mut leaves = Vec::new();
         collect_leaves(value, &mut String::new(), &mut leaves);
         let unknown = Self::audit_paths::<T, _>(leaves)
@@ -2873,7 +2873,7 @@ impl EnvVarAudit {
 }
 
 /// One config-value-shaped typo hint: a dotted leaf path present in the
-/// operator's deserialized config value (typically a `serde_yaml::Value`
+/// operator's deserialized config value (typically a `serde_norway::Value`
 /// loaded from their YAML/TOML file) but not corresponding to any
 /// schema leaf, paired with the closest schema leaf (if any lies within
 /// the typo threshold). Produced by [`ConfigCoverage::audit_value`].
@@ -3117,9 +3117,9 @@ fn levenshtein(a: &str, b: &str) -> usize {
 /// non-mapping leaf. Mappings recurse (nested structs); scalars, sequences,
 /// and null are leaves. Built push-based (no `format!`) to keep the walker
 /// allocation-light.
-fn collect_leaves(value: &serde_yaml::Value, prefix: &mut String, out: &mut Vec<String>) {
+fn collect_leaves(value: &serde_norway::Value, prefix: &mut String, out: &mut Vec<String>) {
     match value {
-        serde_yaml::Value::Mapping(map) => {
+        serde_norway::Value::Mapping(map) => {
             for (key, val) in map {
                 let key_str = key.as_str().unwrap_or("?");
                 let restore = prefix.len();
@@ -3516,7 +3516,7 @@ window:
   height: 40
 tags: [a, b, c]
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert!(audit.is_clean(), "expected clean audit, got {audit:?}");
         assert!(audit.unknown.is_empty());
@@ -3533,7 +3533,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert_eq!(audit.unknown.len(), 1);
         assert_eq!(audit.unknown[0].path, "window.witdh");
@@ -3557,7 +3557,7 @@ tags: []
 unrelated_section:
   some_knob: yes
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert_eq!(audit.unknown.len(), 1);
         assert_eq!(audit.unknown[0].path, "unrelated_section.some_knob");
@@ -3581,7 +3581,7 @@ zzz_extra: 1
 aaa_extra: 1
 mmm_extra: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         let paths: Vec<&str> = audit.unknown.iter().map(|h| h.path.as_str()).collect();
         assert_eq!(paths, vec!["aaa_extra", "mmm_extra", "zzz_extra"]);
@@ -3600,7 +3600,7 @@ window:
   height: 40
 tags: [one, two, three]
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert!(
             audit.is_clean(),
@@ -3614,11 +3614,11 @@ tags: [one, two, three]
         // default MUST audit clean — schema_leaf_paths and audit_value
         // are derived from the same tree walk (collect_leaves), so a
         // future refactor that drifts the two must turn this red.
-        let default_yaml = serde_yaml::to_value(Demo::prescribed_default()).unwrap();
+        let default_yaml = serde_norway::to_value(Demo::prescribed_default()).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&default_yaml);
         assert!(
             audit.is_clean(),
-            "audit_value(serde_yaml::to_value(T::prescribed_default())) must be clean; got {audit:?}",
+            "audit_value(serde_norway::to_value(T::prescribed_default())) must be clean; got {audit:?}",
         );
     }
 
@@ -3644,7 +3644,7 @@ window:
 tags: []
 unrelated_knob: x
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
         // Cross-keying: the sorted set of normalized dotted paths must
         // agree between the two audits.
@@ -3756,7 +3756,7 @@ window:
 tags: []
 totally_unrelated: x
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
         // Hand-encode the leaves audit_value walks — mappings recurse,
         // sequences (`tags`) are one leaf.
@@ -3994,7 +3994,7 @@ window:
   height: 40
 tags: [a, b]
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
     }
 
@@ -4013,7 +4013,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
     }
 
@@ -4032,7 +4032,7 @@ window:
 tags: []
 totally.unrelated: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
     }
 
@@ -4113,7 +4113,7 @@ window:
   height: 40
 tags: []
 ";
-            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
             ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
         })
         .expect_err("value surface must panic on the typo");
@@ -4163,7 +4163,7 @@ window:
   height: 40
 tags: []
 ";
-            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
             ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
         })
         .expect_err("value surface must panic on the typo");
@@ -4201,11 +4201,11 @@ tags: []
         // through audit_paths, so a bug in the fold or the primitive
         // must not silently produce false positives on the schema's
         // own output.
-        let default_yaml = serde_yaml::to_value(Demo::prescribed_default()).unwrap();
+        let default_yaml = serde_norway::to_value(Demo::prescribed_default()).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&default_yaml);
         assert!(
             audit.is_clean(),
-            "audit_value(serde_yaml::to_value(T::prescribed_default())) must be clean after the audit_paths lift; got {audit:?}",
+            "audit_value(serde_norway::to_value(T::prescribed_default())) must be clean after the audit_paths lift; got {audit:?}",
         );
     }
 
@@ -4225,7 +4225,7 @@ window:
   height: 40
 tags: [a, b]
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![
             ("MYAPP_NAME".into(), "kanchi".into()),
             ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
@@ -4248,7 +4248,7 @@ window:
   height: 40
 tags: [a, b]
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![
             ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
             ("PATH".into(), "/usr/bin".into()),
@@ -4275,7 +4275,7 @@ window:
 tags: []
 totally_unrelated: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![
             ("MYAPP_WINDOW__WITDH".into(), "100".into()),
             ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
@@ -4307,7 +4307,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
         // Only consumer surface dirty (a stale extra entry).
         let dirty_consumed = &[
@@ -4335,7 +4335,7 @@ window:
   height: 40
 tags: []
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let r = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
             &dirty_value,
@@ -4376,7 +4376,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         ConfigCoverage::assert_healthy::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
             &value,
@@ -4409,7 +4409,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let payload = std::panic::catch_unwind(|| {
             ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
@@ -4460,7 +4460,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
         let payload = std::panic::catch_unwind(|| {
             ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
@@ -4539,7 +4539,7 @@ tags: []
             };
             let yaml = if v_dirty { dirty_yaml } else { clean_yaml };
             let env = if e_dirty { &dirty_env } else { &clean_env };
-            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
             let any_dirty = c_dirty || v_dirty || e_dirty;
             let healthy_panicked = std::panic::catch_unwind(|| {
                 ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", env);
@@ -4594,7 +4594,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
         let clean_coverage = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
         let clean_value_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
@@ -4630,7 +4630,7 @@ window:
   height: 40
 tags: []
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_value_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
         assert!(dirty_value_audit.hint_count() > 0);
         assert!(!dirty_value_audit.is_clean());
@@ -4773,7 +4773,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let sub_report_seq: Vec<SurfaceHint<'_>> = health.coverage.hint_iter().collect();
@@ -4932,7 +4932,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         for &surface in &[HintSurface::DeadKnob, HintSurface::StaleEntry] {
@@ -5143,7 +5143,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         for &surface in &[HintSurface::DeadKnob, HintSurface::StaleEntry] {
@@ -5367,7 +5367,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let sub_hist = health.coverage.hint_counts_by_surface();
@@ -5630,7 +5630,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let sub_hist = health.coverage.is_clean_by_surfaces();
@@ -5994,7 +5994,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let sub_hist = health.coverage.hints_by_surface();
@@ -6054,7 +6054,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
         assert_eq!(clean_audit.hint_iter().count(), clean_audit.hint_count());
         assert_eq!(clean_audit.hint_iter().count(), 0);
@@ -6067,7 +6067,7 @@ window:
   totally_extra: 1
 tags: []
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
         assert_eq!(dirty_audit.hint_iter().count(), dirty_audit.hint_count());
         assert!(dirty_audit.hint_iter().count() >= 2, "{dirty_audit:?}");
@@ -6089,7 +6089,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert!(audit.hint_count() >= 1, "{audit:?}");
         for hint in audit.hint_iter() {
@@ -6120,7 +6120,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         let hints: Vec<SurfaceHint<'_>> = audit.hint_iter().collect();
         assert_eq!(hints.len(), audit.unknown.len());
@@ -6238,7 +6238,7 @@ window:
 tags: []
 totally_unrelated: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![
             ("MYAPP_WINDOW__WITDH".into(), "1".into()),
             ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
@@ -6288,7 +6288,7 @@ window:
   totally_extra: 1
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert_eq!(value_audit.hint_count(), value_audit.unknown.len());
         assert!(value_audit.hint_count() >= 2, "{value_audit:?}");
@@ -6322,7 +6322,7 @@ window:
 tags: []
 totally_unrelated: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![
             ("MYAPP_WINDOW__WITDH".into(), "1".into()),
             ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
@@ -6371,7 +6371,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -6397,7 +6397,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![
             ("MYAPP_WINDOW__WITDH".into(), "1".into()),
             ("MYAPP_ENV_ONLY_LEAF".into(), "x".into()),
@@ -6433,7 +6433,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let hints: Vec<SurfaceHint<'_>> = health.hint_iter().collect();
@@ -6491,7 +6491,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let surfaces: Vec<HintSurface> = health.hint_iter().map(|h| h.surface).collect();
@@ -6547,7 +6547,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         // Route hint_iter through render_hint_pairs, grouped by
@@ -6593,7 +6593,7 @@ tags: []
         let env: Vec<(String, String)> = vec![("MYAPP_TOTALLY_MADE_UP".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+            &serde_norway::Value::Mapping(serde_norway::Mapping::new()),
             "MYAPP_",
             &env,
         );
@@ -6652,7 +6652,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
 
@@ -6704,7 +6704,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -6741,7 +6741,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -6821,7 +6821,7 @@ value_only_leaf: 1
             ),
         ];
         for (i, (consumed, yaml, env)) in inputs.iter().enumerate() {
-            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
             let health =
                 ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", env);
             for &surface in HintSurface::ALL {
@@ -6857,7 +6857,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -6889,7 +6889,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -6925,7 +6925,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -6950,7 +6950,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -6981,7 +6981,7 @@ value_only_leaf: 1
         // seam.
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Null,
+            &serde_norway::Value::Null,
             "MYAPP_",
             &Vec::<(String, String)>::new(),
         );
@@ -7008,7 +7008,7 @@ value_only_leaf: 1
         // turns red.
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Null,
+            &serde_norway::Value::Null,
             "MYAPP_",
             &Vec::<(String, String)>::new(),
         );
@@ -7039,7 +7039,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -7068,7 +7068,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7110,7 +7110,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -7135,7 +7135,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7167,7 +7167,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -7224,7 +7224,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -7255,7 +7255,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7293,7 +7293,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -7314,7 +7314,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7338,7 +7338,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -7381,7 +7381,7 @@ tags: []
         // for the bool-side histogram.
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Null,
+            &serde_norway::Value::Null,
             "MYAPP_",
             &Vec::<(String, String)>::new(),
         );
@@ -7409,7 +7409,7 @@ tags: []
         // for the bool-side histogram.
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Null,
+            &serde_norway::Value::Null,
             "MYAPP_",
             &Vec::<(String, String)>::new(),
         );
@@ -7435,7 +7435,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -7484,7 +7484,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -7520,7 +7520,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7567,7 +7567,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -7604,7 +7604,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -7646,7 +7646,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -7685,7 +7685,7 @@ tags: []
         // for the enumeration-side histogram.
         let health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::Value::Null,
+            &serde_norway::Value::Null,
             "MYAPP_",
             &Vec::<(String, String)>::new(),
         );
@@ -9223,7 +9223,7 @@ tags: []
         // consumer site.
         let consumed = &["kept"]; // one entry the schema will not have
         let yaml = "unknown_key_that_is_a_typo: 1\n";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ALSO_UNKNOWN".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
 
@@ -9301,7 +9301,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9347,7 +9347,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -9370,7 +9370,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -9409,7 +9409,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let expected: Vec<HintSurface> = HintSurface::ALL
@@ -9445,7 +9445,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9501,7 +9501,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9538,7 +9538,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9589,7 +9589,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -9612,7 +9612,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -9646,7 +9646,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let expected: Vec<HintSurface> = HintSurface::ALL
@@ -9687,7 +9687,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9741,7 +9741,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9779,7 +9779,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
         let observed: Vec<HintSurface> = health.hint_iter().map(|h| h.surface).collect();
@@ -9812,7 +9812,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9854,7 +9854,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -9877,7 +9877,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -9912,7 +9912,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9950,7 +9950,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -9978,7 +9978,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
@@ -10001,7 +10001,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.witdh", "window.height"],
@@ -10029,7 +10029,7 @@ value_only_leaf: 1
         // even if the peer agreement tests happened to survive.
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::from_str::<serde_yaml::Value>(
+            &serde_norway::from_str::<serde_norway::Value>(
                 "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n",
             )
             .unwrap(),
@@ -10042,7 +10042,7 @@ value_only_leaf: 1
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.witdh", "window.height"],
-            &serde_yaml::from_str::<serde_yaml::Value>(
+            &serde_norway::from_str::<serde_norway::Value>(
                 "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\nvalue_only_leaf: 1\n",
             )
             .unwrap(),
@@ -10072,7 +10072,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -10115,7 +10115,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             clean_consumed,
@@ -10138,7 +10138,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             dirty_consumed,
@@ -10175,7 +10175,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -10216,7 +10216,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
             mixed_consumed,
@@ -10244,7 +10244,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_env: Vec<(String, String)> = vec![];
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
@@ -10267,7 +10267,7 @@ window:
 tags: []
 value_only_leaf: 1
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.witdh", "window.height"],
@@ -10295,7 +10295,7 @@ value_only_leaf: 1
         // the peer agreement tests happened to survive.
         let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
-            &serde_yaml::from_str::<serde_yaml::Value>(
+            &serde_norway::from_str::<serde_norway::Value>(
                 "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n",
             )
             .unwrap(),
@@ -10308,7 +10308,7 @@ value_only_leaf: 1
         let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.witdh", "window.height"],
-            &serde_yaml::from_str::<serde_yaml::Value>(
+            &serde_norway::from_str::<serde_norway::Value>(
                 "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\nvalue_only_leaf: 1\n",
             )
             .unwrap(),
@@ -10337,7 +10337,7 @@ window:
   height: 40
 tags: []
 ";
-        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_value: serde_norway::Value = serde_norway::from_str(mixed_yaml).unwrap();
         let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
         ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
@@ -10348,8 +10348,8 @@ tags: []
     }
 
     fn iter_primitive_clean_health() -> HealthReport {
-        let clean_value: serde_yaml::Value =
-            serde_yaml::from_str("name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n")
+        let clean_value: serde_norway::Value =
+            serde_norway::from_str("name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n")
                 .unwrap();
         ConfigCoverage::health_report::<Demo, _, _>(
             &["name", "tags", "window.width", "window.height"],
@@ -10360,7 +10360,7 @@ tags: []
     }
 
     fn iter_primitive_dirty_health() -> HealthReport {
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(
+        let dirty_value: serde_norway::Value = serde_norway::from_str(
             "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\nvalue_only_leaf: 1\n",
         )
         .unwrap();
@@ -10800,7 +10800,7 @@ window:
   height: 40
 tags: []
 ";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_norway::Value = serde_norway::from_str(yaml).unwrap();
         let audit = ConfigCoverage::audit_value::<Demo>(&value);
         assert_eq!(audit.first_hint(), audit.hint_iter().next());
         let head = audit.first_hint().expect("dirty value audit is non-clean");
@@ -10824,7 +10824,7 @@ window:
   height: 40
 tags: []
 ";
-        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_value: serde_norway::Value = serde_norway::from_str(clean_yaml).unwrap();
         let clean_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
         assert_eq!(clean_audit.first_hint(), None);
         assert!(clean_audit.is_clean());
@@ -10836,7 +10836,7 @@ window:
   height: 40
 tags: []
 ";
-        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value: serde_norway::Value = serde_norway::from_str(dirty_yaml).unwrap();
         let dirty_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
         assert!(dirty_audit.first_hint().is_some());
         assert!(!dirty_audit.is_clean());

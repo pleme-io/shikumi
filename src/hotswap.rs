@@ -38547,11 +38547,11 @@ mod serde_tests {
     fn cross_codec_round_trip_holds_on_every_variant() {
         for k in all_fused() {
             let json = serde_json::to_string(&k).expect("json Serialize");
-            let yaml = serde_yaml::to_string(&k).expect("yaml Serialize");
+            let yaml = serde_norway::to_string(&k).expect("yaml Serialize");
             let from_json: ProofRelationKind =
                 serde_json::from_str(&json).expect("json Deserialize");
             let from_yaml: ProofRelationKind =
-                serde_yaml::from_str(&yaml).expect("yaml Deserialize");
+                serde_norway::from_str(&yaml).expect("yaml Deserialize");
             assert_eq!(from_json, k, "json codec identity");
             assert_eq!(from_yaml, k, "yaml codec identity");
             assert_eq!(from_json, from_yaml, "cross-codec agreement");

@@ -8,11 +8,12 @@ use std::path::Path;
 
 use figment::{
     Error as FigmentError, Figment, Metadata, Profile,
-    providers::{Env, Format as _, Serialized, Toml as FigToml, Yaml as FigYaml},
+    providers::{Env, Format as _, Serialized, Toml as FigToml},
     value::{Dict, Map, Value},
 };
 
 use crate::discovery::Format;
+use crate::yaml_format::Yaml as FigYaml;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ShikumiError;

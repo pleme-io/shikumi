@@ -1563,7 +1563,7 @@ pub enum ConfigShowError {
     #[error("`tier custom` requires --path <FILE>")]
     CustomTierWithoutPath,
     #[error("YAML serialization failed: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_norway::Error),
     #[error("JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("effective config resolution failed: {0}")]
@@ -1626,7 +1626,7 @@ impl ConfigShowError {
     }
 
     /// True iff this rejection is [`Self::Yaml`] — a YAML serialization
-    /// failure surfaced from [`serde_yaml::to_string`] on the
+    /// failure surfaced from [`serde_norway::to_string`] on the
     /// materialized-config value. The operator-input variant
     /// [`Self::CustomTierWithoutPath`] and the mirror emitter variant
     /// [`Self::Json`] both return `false`.
@@ -1694,7 +1694,7 @@ impl ConfigShowCommand {
         }
 
         let s = match self.format {
-            OutputFormat::Yaml => serde_yaml::to_string(&cfg)?,
+            OutputFormat::Yaml => serde_norway::to_string(&cfg)?,
             OutputFormat::Json => serde_json::to_string_pretty(&cfg)?,
         };
         print!("{s}");
@@ -1738,13 +1738,13 @@ impl ConfigShowCommand {
     ) -> Result<String, ConfigShowError> {
         if !self.provenance {
             return Ok(match self.format {
-                OutputFormat::Yaml => serde_yaml::to_string(resolved.value())?,
+                OutputFormat::Yaml => serde_norway::to_string(resolved.value())?,
                 OutputFormat::Json => serde_json::to_string_pretty(resolved.value())?,
             });
         }
         let rows = provenance_rows(resolved);
         Ok(match self.format {
-            OutputFormat::Yaml => serde_yaml::to_string(&rows)?,
+            OutputFormat::Yaml => serde_norway::to_string(&rows)?,
             OutputFormat::Json => serde_json::to_string_pretty(&rows)?,
         })
     }
@@ -4419,14 +4419,14 @@ mod tests {
     // ─── ConfigShowError sibling predicates — ternary-partition arms
     // ─── on the CLI-run rejection tag ──────────────────────────────
 
-    /// Helper: build a `serde_yaml::Error` by asking the YAML parser
+    /// Helper: build a `serde_norway::Error` by asking the YAML parser
     /// to decode obviously malformed input, then converting into the
     /// unit variant `bool`. The exact error message is not part of
     /// the pin — only its type identity, so that the `#[from]`
     /// promotion into [`ConfigShowError::Yaml`] fires the same
     /// classifier a runtime `to_string` failure would.
-    fn synthetic_yaml_error() -> serde_yaml::Error {
-        serde_yaml::from_str::<bool>("[not a bool").expect_err("malformed YAML input must reject")
+    fn synthetic_yaml_error() -> serde_norway::Error {
+        serde_norway::from_str::<bool>("[not a bool").expect_err("malformed YAML input must reject")
     }
 
     /// Helper: build a `serde_json::Error` by asking the JSON parser
@@ -4457,7 +4457,7 @@ mod tests {
     #[test]
     fn config_show_error_is_yaml_true_only_for_yaml_variant() {
         // Mirror per-variant polarity pin on the Yaml corner. The
-        // payload is drawn from the `#[from] serde_yaml::Error` path
+        // payload is drawn from the `#[from] serde_norway::Error` path
         // so the pin also structurally binds the enum's `From`
         // conversion to the sibling classifier: a future edit that
         // switched the `#[from]` slot to a different variant would
@@ -4515,7 +4515,7 @@ mod tests {
     #[test]
     fn config_show_error_predicates_agree_with_from_conversions_and_run_rejection() {
         // Cross-cut structural pin between the enum's `#[from]`
-        // conversions (`serde_yaml::Error` → [`Self::Yaml`],
+        // conversions (`serde_norway::Error` → [`Self::Yaml`],
         // `serde_json::Error` → [`Self::Json`]) and the
         // `ConfigShowCommand::run` rejection path
         // (`tier=Custom, path=None` → [`Self::CustomTierWithoutPath`])
@@ -4549,7 +4549,7 @@ mod tests {
         assert!(!err.is_yaml());
         assert!(!err.is_json());
 
-        // ── serde_yaml::Error promotion through `#[from]` ─────────
+        // ── serde_norway::Error promotion through `#[from]` ─────────
         let promoted_yaml: ConfigShowError = synthetic_yaml_error().into();
         assert!(!promoted_yaml.is_custom_tier_without_path());
         assert!(

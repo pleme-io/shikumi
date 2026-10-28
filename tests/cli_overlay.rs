@@ -444,6 +444,6 @@ fn config_show_effective_renders_the_fold_with_provenance() {
         ..show
     };
     let yaml = plain.render_effective(&r).unwrap();
-    let back: Sample = serde_yaml::from_str(&yaml).unwrap();
+    let back: Sample = serde_norway::from_str(&yaml).unwrap();
     assert_eq!(&back, r.value());
 }

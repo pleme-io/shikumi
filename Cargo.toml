@@ -162,7 +162,7 @@ github = ["dep:reqwest", "reqwest/blocking", "dep:jsonwebtoken", "dep:base64"]
 
 [dependencies]
 arc-swap = "1.8"
-figment = { version = "0.10", features = ["env", "yaml", "toml"] }
+figment = { version = "0.10", features = ["env", "toml"] }
 
 # Typed-dispatcher catalog integration
 # (theory/UNIFIED-COMPUTING-MODEL.md §VI).
@@ -187,7 +187,7 @@ schemars = "1.2"
 # Used by shikumi::tiered::ConfigDiff for structural YAML diffing
 # in TieredConfig::diff_against's default impl. Must be a non-dev
 # dep because tiered.rs is lib code that consumers compile against.
-serde_yaml = "0.9"
+serde_norway = "0.9"
 thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
@@ -285,7 +285,7 @@ notify = { version = "8.2", default-features = false, features = ["macos_fsevent
 tempfile = "3"
 serde_json = "1"
 # For SecretSource::{op, sops, akeyless, …} YAML deserialization tests
-serde_yaml = "0.9"
+serde_norway = "0.9"
 # SecretClient async tests — needed even when no native features are on.
 tokio = { version = "1", features = ["rt", "macros"] }
 # RE-ADDED 2026-08-06 alongside `pleme-hotswap` (both published 0.1.1 on

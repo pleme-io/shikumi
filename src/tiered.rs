@@ -1239,7 +1239,7 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
             ConfigTier::Custom(path) => {
                 let base = Self::prescribed_default();
                 match std::fs::read_to_string(&path) {
-                    Ok(s) => match serde_yaml::from_str::<Self>(&s) {
+                    Ok(s) => match serde_norway::from_str::<Self>(&s) {
                         Ok(overlay) => overlay.extend(&base),
                         Err(e) => {
                             tracing::warn!(
@@ -1449,8 +1449,8 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     /// Diff `self` against `baseline`. Default: serialize both to
     /// YAML and produce a line-oriented diff.
     fn diff_against(&self, baseline: &Self) -> ConfigDiff {
-        let a = serde_yaml::to_string(baseline).unwrap_or_default();
-        let b = serde_yaml::to_string(self).unwrap_or_default();
+        let a = serde_norway::to_string(baseline).unwrap_or_default();
+        let b = serde_norway::to_string(self).unwrap_or_default();
         ConfigDiff::from_yaml_pair(&a, &b)
     }
 }
@@ -76350,9 +76350,9 @@ mod tests {
         // manifest recording the diff-cell kind of a `ConfigDiff`
         // sample) round-trips without a consumer-side rename helper.
         for k in DiffLineKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: DiffLineKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -76389,7 +76389,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: DiffLineKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -76410,7 +76410,7 @@ mod tests {
         // ConfigSourceKind's serde surface (commit `e0b96d1`), and
         // FormatProvenance's serde surface (commit `2c7654c`).
         for bad in &["changed", "deleted", "modified", "noop"] {
-            let err = serde_yaml::from_str::<DiffLineKind>(bad)
+            let err = serde_norway::from_str::<DiffLineKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -76434,15 +76434,15 @@ mod tests {
         // `watch_event_class_serde_yaml_emission_is_bare_scalar`
         // (commit `94f8a8b`).
         assert_eq!(
-            serde_yaml::to_string(&DiffLineKind::Removed).unwrap(),
+            serde_norway::to_string(&DiffLineKind::Removed).unwrap(),
             "removed\n",
         );
         assert_eq!(
-            serde_yaml::to_string(&DiffLineKind::Added).unwrap(),
+            serde_norway::to_string(&DiffLineKind::Added).unwrap(),
             "added\n",
         );
         assert_eq!(
-            serde_yaml::to_string(&DiffLineKind::Context).unwrap(),
+            serde_norway::to_string(&DiffLineKind::Context).unwrap(),
             "context\n",
         );
     }

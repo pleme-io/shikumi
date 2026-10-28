@@ -87,6 +87,7 @@ mod source;
 mod store;
 pub mod tiered;
 mod watcher;
+pub mod yaml_format;
 
 pub use coverage::{
     ConfigCoverage, CoverageHint, CoverageReport, EnvVarAudit, EnvVarHint, HealthReport,

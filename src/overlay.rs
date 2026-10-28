@@ -269,7 +269,7 @@ impl FromStr for SetAssignment {
         let value = if rhs.is_empty() {
             Value::from(String::new())
         } else {
-            serde_yaml::from_str::<Value>(rhs).map_err(|e| SetAssignmentError::InvalidValue {
+            serde_norway::from_str::<Value>(rhs).map_err(|e| SetAssignmentError::InvalidValue {
                 raw: owned(),
                 message: e.to_string(),
             })?

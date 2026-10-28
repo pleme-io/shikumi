@@ -3039,9 +3039,9 @@ mod tests {
         // watcher-event sample) round-trips without a consumer-side
         // rename helper.
         for c in WatchEventClass::ALL {
-            let yaml = serde_yaml::to_string(c).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(c).expect("Serialize must succeed");
             let parsed: WatchEventClass =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *c, "serde_yaml round-trip must preserve {c:?}");
         }
     }
@@ -3078,7 +3078,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: WatchEventClass =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -3099,7 +3099,7 @@ mod tests {
         // (commit `e0b96d1`), and FormatProvenance's serde surface
         // (commit `2c7654c`).
         for bad in &["modify", "create", "rename", "noop"] {
-            let err = serde_yaml::from_str::<WatchEventClass>(bad)
+            let err = serde_norway::from_str::<WatchEventClass>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -3123,15 +3123,15 @@ mod tests {
         // `env_metadata_tag_kind_serde_yaml_emission_is_bare_scalar`
         // (commit `b556b75`).
         assert_eq!(
-            serde_yaml::to_string(&WatchEventClass::Reload).unwrap(),
+            serde_norway::to_string(&WatchEventClass::Reload).unwrap(),
             "reload\n",
         );
         assert_eq!(
-            serde_yaml::to_string(&WatchEventClass::Removed).unwrap(),
+            serde_norway::to_string(&WatchEventClass::Removed).unwrap(),
             "removed\n",
         );
         assert_eq!(
-            serde_yaml::to_string(&WatchEventClass::Ignored).unwrap(),
+            serde_norway::to_string(&WatchEventClass::Ignored).unwrap(),
             "ignored\n",
         );
     }

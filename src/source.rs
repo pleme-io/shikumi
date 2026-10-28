@@ -30748,7 +30748,7 @@ impl<'a> FigmentSourceTag<'a> {
     ///
     /// The predicate names the **borrowed figment-Source shape** — the
     /// per-value attribution attached by figment's built-in file
-    /// providers ([`figment::providers::Yaml::file`],
+    /// providers ([`crate::yaml_format::Yaml::file`],
     /// [`figment::providers::Toml::file`], and every shikumi-built
     /// file-based provider). Tag-side peer of the `'static`
     /// [`FigmentSourceKind`] projection carried by [`Self::kind`]: for
@@ -99241,9 +99241,9 @@ mod tests {
         // manifest recording the layer-kind of a failing attribution)
         // round-trips without a consumer-side rename helper.
         for k in ConfigSourceKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: ConfigSourceKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -99279,7 +99279,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: ConfigSourceKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -99296,7 +99296,7 @@ mod tests {
         // serde surface (commit `2c7654c`) and Format's serde surface
         // (commit `b56b121`).
         for bad in &["http", "vault", "default", "configmap"] {
-            let err = serde_yaml::from_str::<ConfigSourceKind>(bad)
+            let err = serde_norway::from_str::<ConfigSourceKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -99828,7 +99828,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let file = dir.path().join("c.yaml");
         std::fs::write(&file, "k: v\n").unwrap();
-        let figment = figment::Figment::new().merge(figment::providers::Yaml::file(&file));
+        let figment = figment::Figment::new().merge(crate::yaml_format::Yaml::file(&file));
         let value: figment::value::Value = figment.find_value("k").unwrap();
         let tag = figment.get_metadata(value.tag()).unwrap();
         let src = tag.source.as_ref().expect("Yaml::file attaches a source");
@@ -101712,9 +101712,9 @@ mod tests {
         // recording the figment-Source kind of a failing attribution)
         // round-trips without a consumer-side rename helper.
         for k in FigmentSourceKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: FigmentSourceKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -101750,7 +101750,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: FigmentSourceKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -101767,7 +101767,7 @@ mod tests {
         // ConfigSourceKind's serde surface (commit `e0b96d1`) and
         // FormatProvenance's serde surface (commit `2c7654c`).
         for bad in &["files", "raw", "url", "configmap"] {
-            let err = serde_yaml::from_str::<FigmentSourceKind>(bad)
+            let err = serde_norway::from_str::<FigmentSourceKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -101928,9 +101928,9 @@ mod tests {
         // attribution) round-trips without a consumer-side rename
         // helper.
         for k in FigmentNameTagKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: FigmentNameTagKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -101966,7 +101966,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: FigmentNameTagKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -101984,7 +101984,7 @@ mod tests {
         // ConfigSourceKind's serde surface (commit `e0b96d1`), and
         // FormatProvenance's serde surface (commit `2c7654c`).
         for bad in &["formats", "envs", "raw", "configmap"] {
-            let err = serde_yaml::from_str::<FigmentNameTagKind>(bad)
+            let err = serde_norway::from_str::<FigmentNameTagKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -102152,9 +102152,9 @@ mod tests {
         // attribution) round-trips without a consumer-side rename
         // helper.
         for k in EnvMetadataTagKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: EnvMetadataTagKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -102191,7 +102191,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: EnvMetadataTagKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -102211,7 +102211,7 @@ mod tests {
         // (commit `e0b96d1`), and FormatProvenance's serde surface
         // (commit `2c7654c`).
         for bad in &["pref", "raw", "naked", "envvar"] {
-            let err = serde_yaml::from_str::<EnvMetadataTagKind>(bad)
+            let err = serde_norway::from_str::<EnvMetadataTagKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -102235,11 +102235,11 @@ mod tests {
         // `secret_ref_shape_serde_yaml_emission_is_bare_scalar`
         // (commit `8a84bb6`).
         assert_eq!(
-            serde_yaml::to_string(&EnvMetadataTagKind::Prefixed).unwrap(),
+            serde_norway::to_string(&EnvMetadataTagKind::Prefixed).unwrap(),
             "prefixed\n",
         );
         assert_eq!(
-            serde_yaml::to_string(&EnvMetadataTagKind::Bare).unwrap(),
+            serde_norway::to_string(&EnvMetadataTagKind::Bare).unwrap(),
             "bare\n",
         );
     }
@@ -102255,7 +102255,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let file = dir.path().join("c.yaml");
         std::fs::write(&file, "k: v\n").unwrap();
-        let figment = figment::Figment::new().merge(figment::providers::Yaml::file(&file));
+        let figment = figment::Figment::new().merge(crate::yaml_format::Yaml::file(&file));
         let value: figment::value::Value = figment.find_value("k").unwrap();
         let md = figment.get_metadata(value.tag()).unwrap();
         let name: &str = md.name.as_ref();

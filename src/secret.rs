@@ -3487,7 +3487,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_bare_string_as_literal() {
-        let source: SecretSource = serde_yaml::from_str("dev-secret").unwrap();
+        let source: SecretSource = serde_norway::from_str("dev-secret").unwrap();
         match source {
             SecretSource::Literal(s) => assert_eq!(s, "dev-secret"),
             other => panic!("expected Literal, got {other:?}"),
@@ -3496,7 +3496,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_op_reference() {
-        let source: SecretSource = serde_yaml::from_str("op: op://vault/item/field").unwrap();
+        let source: SecretSource = serde_norway::from_str("op: op://vault/item/field").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Op(r)) => {
                 assert_eq!(r, "op://vault/item/field");
@@ -3507,7 +3507,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_command() {
-        let source: SecretSource = serde_yaml::from_str("command: cat /tmp/secret").unwrap();
+        let source: SecretSource = serde_norway::from_str("command: cat /tmp/secret").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Command(c)) => {
                 assert_eq!(c, "cat /tmp/secret");
@@ -3518,7 +3518,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_akeyless() {
-        let source: SecretSource = serde_yaml::from_str("akeyless: /prod/jwt").unwrap();
+        let source: SecretSource = serde_norway::from_str("akeyless: /prod/jwt").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Akeyless(n)) => {
                 assert_eq!(n, "/prod/jwt");
@@ -3529,7 +3529,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_sops_file_shorthand() {
-        let source: SecretSource = serde_yaml::from_str("sops: secrets/prod.yaml").unwrap();
+        let source: SecretSource = serde_norway::from_str("sops: secrets/prod.yaml").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Sops(SopsRef::File(p))) => {
                 assert_eq!(p.to_str().unwrap(), "secrets/prod.yaml");
@@ -3541,7 +3541,7 @@ mod tests {
     #[test]
     fn secret_source_parses_sops_with_field() {
         let yaml = "sops:\n  file: secrets/prod.yaml\n  field: jwt_secret";
-        let source: SecretSource = serde_yaml::from_str(yaml).unwrap();
+        let source: SecretSource = serde_norway::from_str(yaml).unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Sops(SopsRef::Field { file, field })) => {
                 assert_eq!(file.to_str().unwrap(), "secrets/prod.yaml");
@@ -3553,7 +3553,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_explicit_literal() {
-        let source: SecretSource = serde_yaml::from_str("literal: dev-secret").unwrap();
+        let source: SecretSource = serde_norway::from_str("literal: dev-secret").unwrap();
         // Untagged-first means the `{literal: ...}` shape may land in
         // either variant depending on serde's deser order. Both produce
         // the same resolved string — resolve() dispatch is what matters.
@@ -3715,7 +3715,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_vault_bare_path() {
-        let source: SecretSource = serde_yaml::from_str("vault: secret/data/prod/app").unwrap();
+        let source: SecretSource = serde_norway::from_str("vault: secret/data/prod/app").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Vault(VaultRef::Path(p))) => {
                 assert_eq!(p, "secret/data/prod/app");
@@ -3727,7 +3727,7 @@ mod tests {
     #[test]
     fn secret_source_parses_vault_with_field() {
         let yaml = "vault:\n  path: secret/data/prod/app\n  field: password";
-        let source: SecretSource = serde_yaml::from_str(yaml).unwrap();
+        let source: SecretSource = serde_norway::from_str(yaml).unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Vault(VaultRef::Field { path, field })) => {
                 assert_eq!(path, "secret/data/prod/app");
@@ -3739,10 +3739,10 @@ mod tests {
 
     #[test]
     fn secret_source_parses_aws_secret() {
-        let source: SecretSource = serde_yaml::from_str("aws_secret: prod/hanabi/jwt").unwrap();
+        let source: SecretSource = serde_norway::from_str("aws_secret: prod/EXAMPLE/jwt").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::AwsSecret(id)) => {
-                assert_eq!(id, "prod/hanabi/jwt");
+                assert_eq!(id, "prod/EXAMPLE/jwt");
             }
             other => panic!("expected AwsSecret, got {other:?}"),
         }
@@ -3751,10 +3751,10 @@ mod tests {
     #[test]
     fn secret_source_parses_gcp_secret() {
         let source: SecretSource =
-            serde_yaml::from_str("gcp_secret: projects/my-proj/secrets/jwt").unwrap();
+            serde_norway::from_str("gcp_secret: projects/EXAMPLE/secrets/jwt").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::GcpSecret(name)) => {
-                assert_eq!(name, "projects/my-proj/secrets/jwt");
+                assert_eq!(name, "projects/EXAMPLE/secrets/jwt");
             }
             other => panic!("expected GcpSecret, got {other:?}"),
         }
@@ -3858,13 +3858,14 @@ mod tests {
         // tagged object the derive used to produce.
         for (backend, kind) in canonical_secret_backend_kind_samples() {
             let source = SecretSource::Backend(backend);
-            let yaml = serde_yaml::to_string(&source).expect("YAML emission must succeed");
+            let yaml = serde_norway::to_string(&source).expect("YAML emission must succeed");
             assert!(
                 yaml.starts_with(&format!("{}:", kind.as_str())),
                 "{kind:?} must emit as a `{}:` map, got {yaml:?}",
                 kind.as_str()
             );
-            let back: SecretSource = serde_yaml::from_str(&yaml).expect("emitted YAML must parse");
+            let back: SecretSource =
+                serde_norway::from_str(&yaml).expect("emitted YAML must parse");
             assert_eq!(back.backend_kind(), kind);
             assert_eq!(
                 serde_json::to_value(&back).unwrap(),
@@ -3879,12 +3880,12 @@ mod tests {
 
     #[test]
     fn file_and_env_backends_parse_from_yaml() {
-        let file: SecretSource = serde_yaml::from_str("file: ~/.config/github/token").unwrap();
+        let file: SecretSource = serde_norway::from_str("file: ~/.config/github/token").unwrap();
         assert!(matches!(
             &file,
             SecretSource::Backend(SecretBackend::File(p)) if p == Path::new("~/.config/github/token")
         ));
-        let env: SecretSource = serde_yaml::from_str("{ env: GITHUB_TOKEN }").unwrap();
+        let env: SecretSource = serde_norway::from_str("{ env: GITHUB_TOKEN }").unwrap();
         assert!(
             matches!(&env, SecretSource::Backend(SecretBackend::Env(v)) if v == "GITHUB_TOKEN")
         );
@@ -8768,9 +8769,9 @@ mod tests {
         // manifest recording the backend kind of a resolved secret)
         // round-trips without a consumer-side rename helper.
         for k in SecretBackendKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: SecretBackendKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -8807,7 +8808,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: SecretBackendKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -8827,7 +8828,7 @@ mod tests {
         // (commit `e0b96d1`), and FormatProvenance's serde surface
         // (commit `2c7654c`).
         for bad in &["aws", "gcp", "kubernetes", "environ"] {
-            let err = serde_yaml::from_str::<SecretBackendKind>(bad)
+            let err = serde_norway::from_str::<SecretBackendKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -8846,7 +8847,7 @@ mod tests {
         // that an attestation manifest authoring tool can emit the
         // kind as a bare YAML scalar pointwise matching the
         // operator-facing label.
-        let yaml = serde_yaml::to_string(&SecretBackendKind::AwsSecret).unwrap();
+        let yaml = serde_norway::to_string(&SecretBackendKind::AwsSecret).unwrap();
         assert_eq!(yaml, "aws_secret\n");
     }
 
@@ -9022,9 +9023,9 @@ mod tests {
         // manifest recording the extraction shape of a resolved secret)
         // round-trips without a consumer-side rename helper.
         for k in SecretRefShape::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: SecretRefShape =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -9061,7 +9062,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: SecretRefShape =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -9082,7 +9083,7 @@ mod tests {
         // (commit `e0b96d1`), and FormatProvenance's serde surface
         // (commit `2c7654c`).
         for bad in &["bare", "all", "multifield", "path"] {
-            let err = serde_yaml::from_str::<SecretRefShape>(bad)
+            let err = serde_norway::from_str::<SecretRefShape>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -9101,9 +9102,9 @@ mod tests {
         // attestation manifest authoring tool can emit the shape as a
         // bare YAML scalar pointwise matching the operator-facing
         // label.
-        let yaml = serde_yaml::to_string(&SecretRefShape::Whole).unwrap();
+        let yaml = serde_norway::to_string(&SecretRefShape::Whole).unwrap();
         assert_eq!(yaml, "whole\n");
-        let yaml = serde_yaml::to_string(&SecretRefShape::Field).unwrap();
+        let yaml = serde_norway::to_string(&SecretRefShape::Field).unwrap();
         assert_eq!(yaml, "field\n");
     }
 

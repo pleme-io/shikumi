@@ -262,7 +262,7 @@ macro_rules! tiered_permutation_test {
 ///
 /// **Round-trip law** —
 /// `<$ty as FromStr>::from_str(&v.to_string()) == Ok(v)` and
-/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v` for
+/// `serde_norway::from_str::<$ty>(&serde_norway::to_string(&v)?)? == v` for
 /// every `v: $ty`, inherited from the [`crate::ClosedAxisLabel`]
 /// round-trip law by construction. With an explicit `parser`, the law
 /// holds iff `parser(<v as ClosedAxisLabel>::as_str()) == Some(v)` for
@@ -296,8 +296,8 @@ macro_rules! tiered_permutation_test {
 ///
 /// assert_eq!(format!("{}", Mode::On), "on");
 /// assert_eq!("OFF".parse::<Mode>().unwrap(), Mode::Off);
-/// assert_eq!(serde_yaml::to_string(&Mode::On).unwrap(), "on\n");
-/// assert_eq!(serde_yaml::from_str::<Mode>("off").unwrap(), Mode::Off);
+/// assert_eq!(serde_norway::to_string(&Mode::On).unwrap(), "on\n");
+/// assert_eq!(serde_norway::from_str::<Mode>("off").unwrap(), Mode::Off);
 /// let err = "nope".parse::<Mode>().unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
@@ -463,7 +463,7 @@ macro_rules! closed_axis_label_string_surface {
 ///   `$body` expression (generic arm).
 ///
 /// **Round-trip law** —
-/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v`
+/// `serde_norway::from_str::<$ty>(&serde_norway::to_string(&v)?)? == v`
 /// for every `v: $ty`, inherited from the `(Display, FromStr)`
 /// round-trip law by construction.
 ///
@@ -507,9 +507,9 @@ macro_rules! closed_axis_label_string_surface {
 ///
 /// // serde_yaml quotes `0x2a` — a plain scalar that would otherwise be read
 /// // back as a number — so the Display round-trips through a quoted string.
-/// assert_eq!(serde_yaml::to_string(&Hex(0x2a)).unwrap(), "'0x2a'\n");
-/// assert_eq!(serde_yaml::from_str::<Hex>("'0xff'").unwrap(), Hex(0xff));
-/// let err = serde_yaml::from_str::<Hex>("nope").unwrap_err().to_string();
+/// assert_eq!(serde_norway::to_string(&Hex(0x2a)).unwrap(), "'0x2a'\n");
+/// assert_eq!(serde_norway::from_str::<Hex>("'0xff'").unwrap(), Hex(0xff));
+/// let err = serde_norway::from_str::<Hex>("nope").unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
 ///
@@ -571,10 +571,10 @@ macro_rules! closed_axis_label_string_surface {
 /// }
 ///
 /// let v: Tagged<Yaml> = Tagged::new(42);
-/// assert_eq!(serde_yaml::to_string(&v).unwrap(), "yaml:42\n");
-/// let back: Tagged<Yaml> = serde_yaml::from_str("yaml:42").unwrap();
+/// assert_eq!(serde_norway::to_string(&v).unwrap(), "yaml:42\n");
+/// let back: Tagged<Yaml> = serde_norway::from_str("yaml:42").unwrap();
 /// assert_eq!(back, v);
-/// let err = serde_yaml::from_str::<Tagged<Yaml>>("nope").unwrap_err().to_string();
+/// let err = serde_norway::from_str::<Tagged<Yaml>>("nope").unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
 #[macro_export]
@@ -735,7 +735,7 @@ macro_rules! serde_via_display_fromstr {
 /// `(as_str, $parser)` round-trip law on `$ty`: if
 /// `$parser(<$ty as Self>::as_str(v)) == Some(v)` for every `v: $ty`,
 /// then `v.to_string().parse::<$ty>() == Ok(v)` and
-/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v`.
+/// `serde_norway::from_str::<$ty>(&serde_norway::to_string(&v)?)? == v`.
 ///
 /// # Example
 ///
@@ -773,8 +773,8 @@ macro_rules! serde_via_display_fromstr {
 ///
 /// assert_eq!(format!("{}", Phase::Run), "run");
 /// assert_eq!("HALT".parse::<Phase>().unwrap(), Phase::Halt);
-/// assert_eq!(serde_yaml::to_string(&Phase::Boot).unwrap(), "boot\n");
-/// assert_eq!(serde_yaml::from_str::<Phase>("run").unwrap(), Phase::Run);
+/// assert_eq!(serde_norway::to_string(&Phase::Boot).unwrap(), "boot\n");
+/// assert_eq!(serde_norway::from_str::<Phase>("run").unwrap(), Phase::Run);
 /// let err = "nope".parse::<Phase>().unwrap_err();
 /// assert_eq!(err.label, "nope");
 /// assert!(err.to_string().contains("nope"));
@@ -869,21 +869,21 @@ where
         for cell in crate::axis_iter::<K>() {
             let base = tier_fn();
             let cfg: C = apply(base, cell);
-            let yaml = match serde_yaml::to_string(&cfg) {
+            let yaml = match serde_norway::to_string(&cfg) {
                 Ok(y) => y,
                 Err(e) => {
                     failures.push(format!("tier={tier_name} cell={cell:?}: serialize: {e}"));
                     continue;
                 }
             };
-            let back: C = match serde_yaml::from_str(&yaml) {
+            let back: C = match serde_norway::from_str(&yaml) {
                 Ok(b) => b,
                 Err(e) => {
                     failures.push(format!("tier={tier_name} cell={cell:?}: deserialize: {e}"));
                     continue;
                 }
             };
-            match serde_yaml::to_string(&back) {
+            match serde_norway::to_string(&back) {
                 Ok(y2) if y2 == yaml => {}
                 Ok(_) => failures.push(format!(
                     "tier={tier_name} cell={cell:?}: serde round-trip not idempotent"

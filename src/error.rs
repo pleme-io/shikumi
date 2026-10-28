@@ -26380,9 +26380,9 @@ mod tests {
         // manifest recording the kind of a captured failure)
         // round-trips without a consumer-side rename helper.
         for k in ShikumiErrorKind::ALL {
-            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let yaml = serde_norway::to_string(k).expect("Serialize must succeed");
             let parsed: ShikumiErrorKind =
-                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+                serde_norway::from_str(&yaml).expect("Deserialize must accept Serialize output");
             assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
         }
     }
@@ -26421,7 +26421,7 @@ mod tests {
         ];
         for (input, expected) in cases {
             let parsed: ShikumiErrorKind =
-                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+                serde_norway::from_str(input).expect("case-insensitive Deserialize must succeed");
             assert_eq!(
                 parsed, *expected,
                 "serde_yaml must parse case-insensitively for input {input:?}",
@@ -26441,7 +26441,7 @@ mod tests {
         // (commit `94f8a8b`), and ConfigSourceKind's serde surface
         // (commit `e0b96d1`).
         for bad in &["notfound", "parser", "fs", "input"] {
-            let err = serde_yaml::from_str::<ShikumiErrorKind>(bad)
+            let err = serde_norway::from_str::<ShikumiErrorKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();
             assert!(
@@ -26469,7 +26469,7 @@ mod tests {
             (ShikumiErrorKind::Extract, "extract\n"),
         ];
         for (k, expected) in pairs {
-            let yaml = serde_yaml::to_string(k).unwrap();
+            let yaml = serde_norway::to_string(k).unwrap();
             assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
         }
     }

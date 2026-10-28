@@ -14278,7 +14278,7 @@ impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
 // `serde::de::Error::custom`).
 //
 // **Round-trip law** — for every `h: AxisHistogram<A>`,
-// `serde_yaml::from_str::<AxisHistogram<A>>(&serde_yaml::to_string(&h)?)? == h`
+// `serde_norway::from_str::<AxisHistogram<A>>(&serde_norway::to_string(&h)?)? == h`
 // and the same on `serde_json`. Pinned uniformly across every
 // [`ClosedAxisLabel`] implementor by
 // [`tests::axis_histogram_serde_yaml_round_trip_for_every_closed_axis_label_implementor`]
@@ -22949,8 +22949,8 @@ mod tests {
         // tag survives the YAML scalar round-trip via the canonical
         // label, no consumer-side rename helper at the renderer.
         for &v in PartitionFace::ALL {
-            let yaml = serde_yaml::to_string(&v).unwrap();
-            let parsed: PartitionFace = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&v).unwrap();
+            let parsed: PartitionFace = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
             assert_eq!(
                 parsed, v,
@@ -22989,7 +22989,7 @@ mod tests {
         for &v in PartitionFace::ALL {
             let upper = v.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: PartitionFace = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: PartitionFace = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(parsed, v);
@@ -23003,7 +23003,7 @@ mod tests {
         // routed via serde::de::Error::custom.
         let sentinel = "__shikumi_unknown_partition_face_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<PartitionFace, _> = serde_yaml::from_str(&yaml);
+        let result: Result<PartitionFace, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -23655,8 +23655,8 @@ mod tests {
         // consumer-side helper combining the two halves at the
         // renderer.
         for v in partition_ordinal_sample() {
-            let yaml = serde_yaml::to_string(&v).unwrap();
-            let parsed: PartitionOrdinal = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let yaml = serde_norway::to_string(&v).unwrap();
+            let parsed: PartitionOrdinal = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("YAML round-trip for {v:?} failed: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(
@@ -23698,7 +23698,7 @@ mod tests {
         for v in partition_ordinal_sample() {
             let face_upper = v.face().as_str().to_ascii_uppercase();
             let yaml = format!("\"{face_upper}:{}\"\n", v.face_ordinal());
-            let parsed: PartitionOrdinal = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: PartitionOrdinal = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(parsed, v);
@@ -23714,7 +23714,7 @@ mod tests {
         // impl.
         let sentinel = "__shikumi_unknown_partition_face_sentinel__";
         let yaml = format!("\"{sentinel}:42\"\n");
-        let result: Result<PartitionOrdinal, _> = serde_yaml::from_str(&yaml);
+        let result: Result<PartitionOrdinal, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -23736,7 +23736,7 @@ mod tests {
         // impl.
         let sentinel = "not_a_number";
         let yaml = format!("\"realizable:{sentinel}\"\n");
-        let result: Result<PartitionOrdinal, _> = serde_yaml::from_str(&yaml);
+        let result: Result<PartitionOrdinal, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -44228,13 +44228,13 @@ mod tests {
                 hist.observe(cell);
             }
         }
-        let yaml = serde_yaml::to_string(&hist).unwrap_or_else(|e| {
+        let yaml = serde_norway::to_string(&hist).unwrap_or_else(|e| {
             panic!(
                 "axis {} must serialize to YAML: {e}",
                 std::any::type_name::<A>(),
             )
         });
-        let parsed: AxisHistogram<A> = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+        let parsed: AxisHistogram<A> = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
             panic!(
                 "axis {} YAML emission must deserialize back: {e}\n  yaml: {yaml:?}",
                 std::any::type_name::<A>(),
@@ -44299,13 +44299,13 @@ mod tests {
         // Pins the round-trip law on the identity element of the
         // histogram monoid under the serde surface.
         let empty = AxisHistogram::<A>::empty();
-        let yaml = serde_yaml::to_string(&empty).unwrap_or_else(|e| {
+        let yaml = serde_norway::to_string(&empty).unwrap_or_else(|e| {
             panic!(
                 "axis {} empty must serialize to YAML: {e}",
                 std::any::type_name::<A>(),
             )
         });
-        let parsed: AxisHistogram<A> = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+        let parsed: AxisHistogram<A> = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
             panic!(
                 "axis {} empty YAML emission must deserialize back: {e}\n  yaml: {yaml:?}",
                 std::any::type_name::<A>(),
@@ -44326,7 +44326,7 @@ mod tests {
         // The unknown-label rejection mode is inherited by the
         // [`Deserialize`] impl from [`FromStr`]: a YAML scalar carrying
         // a sentinel label that does not match any canonical name on
-        // the axis surfaces as a `serde_yaml::Error` whose
+        // the axis surfaces as a `serde_norway::Error` whose
         // `Display`-rendering carries the offending substring verbatim
         // through [`ParseAxisHistogramError::UnknownLabel`]'s
         // operator-facing rendering — the same one-line error a
@@ -44334,7 +44334,7 @@ mod tests {
         // site without losing the verbatim-label discipline.
         let sentinel = "__shikumi_unknown_label_sentinel__";
         let yaml = format!("\"{sentinel}=1\"\n");
-        let result: Result<AxisHistogram<A>, _> = serde_yaml::from_str(&yaml);
+        let result: Result<AxisHistogram<A>, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -45107,21 +45107,21 @@ mod tests {
         // `serde_yaml` may emit the scalar in single-quoted form due
         // to the `=` character; the round-trip law does not depend on
         // the quoting style.
-        let yaml = serde_yaml::to_string(&hist).unwrap();
+        let yaml = serde_norway::to_string(&hist).unwrap();
         assert!(
             yaml.contains("removed=1, added=2, context=3"),
             "YAML emission must contain the canonical Display form, got: {yaml}",
         );
 
         // Round-trip the literal YAML emission back through deserialize.
-        let parsed: AxisHistogram<DiffLineKind> = serde_yaml::from_str(&yaml).unwrap();
+        let parsed: AxisHistogram<DiffLineKind> = serde_norway::from_str(&yaml).unwrap();
         assert_eq!(parsed, hist);
 
         // The accept surface inherits the `(FromStr)` order-invariance
         // and missing-labels-default-to-zero laws on the serde side:
         // an operator-authored YAML manifest can elide zero-cells and
         // permute the pairs.
-        let elided: AxisHistogram<DiffLineKind> = serde_yaml::from_str("\"added=5\"\n").unwrap();
+        let elided: AxisHistogram<DiffLineKind> = serde_norway::from_str("\"added=5\"\n").unwrap();
         let mut expected_elided = AxisHistogram::<DiffLineKind>::empty();
         for _ in 0..5 {
             expected_elided.observe(DiffLineKind::Added);
@@ -45129,13 +45129,14 @@ mod tests {
         assert_eq!(elided, expected_elided);
 
         let permuted: AxisHistogram<DiffLineKind> =
-            serde_yaml::from_str("\"context=3, removed=1, added=2\"\n").unwrap();
+            serde_norway::from_str("\"context=3, removed=1, added=2\"\n").unwrap();
         assert_eq!(permuted, hist);
 
         // The empty histogram round-trips on YAML.
         let empty = AxisHistogram::<DiffLineKind>::empty();
-        let yaml_empty = serde_yaml::to_string(&empty).unwrap();
-        let parsed_empty: AxisHistogram<DiffLineKind> = serde_yaml::from_str(&yaml_empty).unwrap();
+        let yaml_empty = serde_norway::to_string(&empty).unwrap();
+        let parsed_empty: AxisHistogram<DiffLineKind> =
+            serde_norway::from_str(&yaml_empty).unwrap();
         assert_eq!(parsed_empty, empty);
     }
 
@@ -45178,7 +45179,7 @@ mod tests {
     fn axis_histogram_serde_yaml_unknown_label_error_carries_label_verbatim_for_diff_line_kind() {
         // Concrete pin on the unknown-label rejection mode lifted to
         // the serde error site: a YAML scalar carrying an unknown
-        // label surfaces as a `serde_yaml::Error` whose Display
+        // label surfaces as a `serde_norway::Error` whose Display
         // rendering carries the offending substring verbatim through
         // the `ParseAxisHistogramError::UnknownLabel` Display
         // rendering routed through `serde::de::Error::custom`. The
@@ -45186,7 +45187,8 @@ mod tests {
         // substring and the operator-facing rejection phrase
         // (`"unknown axis label"`) the
         // `ParseAxisHistogramError::Display` impl emits.
-        let result: Result<AxisHistogram<DiffLineKind>, _> = serde_yaml::from_str("\"bogus=1\"\n");
+        let result: Result<AxisHistogram<DiffLineKind>, _> =
+            serde_norway::from_str("\"bogus=1\"\n");
         let rendered = match result {
             Err(e) => format!("{e}"),
             Ok(other) => panic!("must reject unknown label, got {other:?}"),
@@ -50598,9 +50600,9 @@ mod tests {
         // override that drifts from the canonical-label projection
         // breaks here at one site rather than at every emitter.
         for &v in ModalityClass::ALL {
-            let yaml = serde_yaml::to_string(&v)
+            let yaml = serde_norway::to_string(&v)
                 .unwrap_or_else(|e| panic!("must serialize {v:?} to YAML: {e}"));
-            let parsed: ModalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: ModalityClass = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("YAML emission for {v:?} must deserialize back: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(
@@ -50651,7 +50653,7 @@ mod tests {
         for &v in ModalityClass::ALL {
             let upper = v.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: ModalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            let parsed: ModalityClass = serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                 panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
             });
             assert_eq!(
@@ -50665,7 +50667,7 @@ mod tests {
     fn modality_class_serde_yaml_unknown_label_error_carries_label_verbatim() {
         // The unknown-label rejection mode lifted to the serde error
         // site: a YAML scalar carrying a sentinel that does not match
-        // any canonical name surfaces as a serde_yaml::Error whose
+        // any canonical name surfaces as a serde_norway::Error whose
         // Display rendering carries the offending substring verbatim
         // through the ParseModalityClassError Display impl routed
         // through serde::de::Error::custom. Pinned so a future
@@ -50673,7 +50675,7 @@ mod tests {
         // verbatim-label discipline breaks here at one site.
         let sentinel = "__shikumi_unknown_modality_class_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<ModalityClass, _> = serde_yaml::from_str(&yaml);
+        let result: Result<ModalityClass, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -50699,7 +50701,7 @@ mod tests {
         // that re-cases the label) surfaces here at one site across
         // every variant.
         for &v in ModalityClass::ALL {
-            let yaml = serde_yaml::to_string(&v).unwrap();
+            let yaml = serde_norway::to_string(&v).unwrap();
             assert!(
                 yaml.contains(v.as_str()),
                 "YAML emission for {v:?} must contain canonical label {:?}, got: {yaml:?}",
@@ -52143,8 +52145,8 @@ mod tests {
     #[test]
     fn support_cardinality_class_serde_yaml_round_trips_over_every_variant() {
         for &v in SupportCardinalityClass::ALL {
-            let yaml = serde_yaml::to_string(&v).unwrap();
-            let parsed: SupportCardinalityClass = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&v).unwrap();
+            let parsed: SupportCardinalityClass = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
             assert_eq!(
                 parsed, v,
@@ -52177,9 +52179,12 @@ mod tests {
         for &v in SupportCardinalityClass::ALL {
             let upper = v.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: SupportCardinalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
-                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
-            });
+            let parsed: SupportCardinalityClass =
+                serde_norway::from_str(&yaml).unwrap_or_else(|e| {
+                    panic!(
+                        "uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}"
+                    )
+                });
             assert_eq!(parsed, v);
         }
     }
@@ -52188,7 +52193,7 @@ mod tests {
     fn support_cardinality_class_serde_yaml_unknown_label_error_carries_label_verbatim() {
         let sentinel = "__shikumi_unknown_support_cardinality_class_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<SupportCardinalityClass, _> = serde_yaml::from_str(&yaml);
+        let result: Result<SupportCardinalityClass, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -54471,8 +54476,8 @@ mod tests {
     #[test]
     fn support_boundary_distance_serde_yaml_round_trips_over_every_variant() {
         for &v in SupportBoundaryDistance::ALL {
-            let yaml = serde_yaml::to_string(&v).unwrap();
-            let parsed: SupportBoundaryDistance = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&v).unwrap();
+            let parsed: SupportBoundaryDistance = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
             assert_eq!(
                 parsed, v,
@@ -54505,9 +54510,12 @@ mod tests {
         for &v in SupportBoundaryDistance::ALL {
             let upper = v.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
-            let parsed: SupportBoundaryDistance = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
-                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
-            });
+            let parsed: SupportBoundaryDistance =
+                serde_norway::from_str(&yaml).unwrap_or_else(|e| {
+                    panic!(
+                        "uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}"
+                    )
+                });
             assert_eq!(parsed, v);
         }
     }
@@ -54516,7 +54524,7 @@ mod tests {
     fn support_boundary_distance_serde_yaml_unknown_label_error_carries_label_verbatim() {
         let sentinel = "__shikumi_unknown_support_boundary_distance_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<SupportBoundaryDistance, _> = serde_yaml::from_str(&yaml);
+        let result: Result<SupportBoundaryDistance, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
@@ -55546,8 +55554,8 @@ mod tests {
     #[test]
     fn support_magnitude_direction_serde_yaml_round_trips_over_every_variant() {
         for &v in SupportMagnitudeDirection::ALL {
-            let yaml = serde_yaml::to_string(&v).unwrap();
-            let parsed: SupportMagnitudeDirection = serde_yaml::from_str(&yaml)
+            let yaml = serde_norway::to_string(&v).unwrap();
+            let parsed: SupportMagnitudeDirection = serde_norway::from_str(&yaml)
                 .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
             assert_eq!(
                 parsed, v,
@@ -55582,7 +55590,7 @@ mod tests {
             let upper = v.as_str().to_ascii_uppercase();
             let yaml = format!("\"{upper}\"\n");
             let parsed: SupportMagnitudeDirection =
-                serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                serde_norway::from_str(&yaml).unwrap_or_else(|e| {
                     panic!(
                         "uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}"
                     )
@@ -55595,7 +55603,7 @@ mod tests {
     fn support_magnitude_direction_serde_yaml_unknown_label_error_carries_label_verbatim() {
         let sentinel = "__shikumi_unknown_support_magnitude_direction_sentinel__";
         let yaml = format!("\"{sentinel}\"\n");
-        let result: Result<SupportMagnitudeDirection, _> = serde_yaml::from_str(&yaml);
+        let result: Result<SupportMagnitudeDirection, _> = serde_norway::from_str(&yaml);
         match result {
             Err(e) => {
                 let rendered = format!("{e}");
