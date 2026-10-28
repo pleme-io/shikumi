@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "c2e7da308a17e04d235f388aaa0352548e7fff723c4fddc436e23f64c0c3341b",
+  "cargo_lock_sha256": "5ba2868aa37bc71241dafd8267e5e2584bbca0a1b9a0c96eb0772ee58af20664",
   "manifest_sha256": {
-    "Cargo.toml": "3b92e62198ba19c2d4668d1074ab807ed384edc4dd309e913a60e5ea133d05df"
+    "Cargo.toml": "fbac43251d001af2a2a7b077fe74bd9ea0240ebda0e1edf67372a57f4502995a"
   },
   "target_resolves": {
     "base": {
@@ -89,7 +89,7 @@
           "std"
         ]
       },
-      "cc-1.9.0": {
+      "cc-1.10.0": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -413,7 +413,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.51": {
+      "gen-macros-0.1.54": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -452,11 +452,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.51": {
+      "gen-platform-0.1.54": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.51",
+            "package_key": "gen-macros-0.1.54",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -466,7 +466,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.51",
+            "package_key": "gen-types-0.1.54",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -520,7 +520,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.51": {
+      "gen-types-0.1.54": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -865,7 +865,7 @@
           "std"
         ]
       },
-      "notify-types-2.1.0": {
+      "notify-types-2.2.0": {
         "runtime_dependencies": [
           {
             "name": "bitflags",
@@ -951,7 +951,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.3",
+            "package_key": "smallvec-1.16.4",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -2097,7 +2097,7 @@
           "serde"
         ]
       },
-      "shikumi-0.1.1083": {
+      "shikumi-0.1.1084": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -2134,7 +2134,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.51",
+            "package_key": "gen-platform-0.1.54",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2144,7 +2144,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.51",
+            "package_key": "gen-types-0.1.54",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2154,7 +2154,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.0",
+            "package_key": "notify-8.2.1",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -2164,7 +2164,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.0",
+            "package_key": "notify-8.2.1",
             "kind": "normal",
             "features": [
               "macos_fsevent"
@@ -2281,7 +2281,7 @@
           "std"
         ]
       },
-      "smallvec-1.16.3": {
+      "smallvec-1.16.4": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2449,7 +2449,7 @@
           },
           {
             "name": "rustix",
-            "package_key": "rustix-1.1.5",
+            "package_key": "rustix-1.1.6",
             "kind": "normal",
             "features": [
               "fs"
@@ -2984,7 +2984,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3006,22 +3006,6 @@
               "link"
             ]
           },
-          "fsevent-sys-4.1.0": {
-            "runtime_dependencies": [
-              {
-                "name": "libc",
-                "package_key": "libc-0.2.191",
-                "kind": "normal",
-                "features": [],
-                "uses_default_features": true,
-                "optional": false,
-                "target": null,
-                "tree": "target"
-              }
-            ],
-            "build_dependencies": [],
-            "features": []
-          },
           "iana-time-zone-0.1.65": {
             "runtime_dependencies": [
               {
@@ -3040,7 +3024,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3049,16 +3033,6 @@
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
-                "target": "cfg(target_os = \"macos\")",
-                "tree": "target"
-              },
-              {
-                "name": "fsevent_sys",
-                "package_key": "fsevent-sys-4.1.0",
-                "kind": "normal",
-                "features": [],
-                "uses_default_features": true,
-                "optional": true,
                 "target": "cfg(target_os = \"macos\")",
                 "tree": "target"
               },
@@ -3084,12 +3058,44 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
                 "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_foundation",
+                "package_key": "objc2-core-foundation-0.3.2",
+                "kind": "normal",
+                "features": [
+                  "CFArray",
+                  "CFDate",
+                  "CFError",
+                  "CFRunLoop",
+                  "CFString",
+                  "CFURL",
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": "cfg(target_os = \"macos\")",
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_services",
+                "package_key": "objc2-core-services-0.3.2",
+                "kind": "normal",
+                "features": [
+                  "FSEvents",
+                  "libc",
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": "cfg(target_os = \"macos\")",
                 "tree": "target"
               },
               {
@@ -3106,10 +3112,72 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "objc2-core-foundation-0.3.2": {
+            "runtime_dependencies": [
+              {
+                "name": "bitflags",
+                "package_key": "bitflags-2.13.2",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": [
+              "CFArray",
+              "CFDate",
+              "CFError",
+              "CFRunLoop",
+              "CFString",
+              "CFURL",
+              "CFUUID",
+              "alloc",
+              "bitflags",
+              "std"
+            ]
+          },
+          "objc2-core-services-0.3.2": {
+            "runtime_dependencies": [
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.191",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": true,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_foundation",
+                "package_key": "objc2-core-foundation-0.3.2",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": [
+              "FSEvents",
+              "alloc",
+              "libc",
+              "std"
+            ]
+          },
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3220,7 +3288,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3336,7 +3404,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -3394,7 +3462,7 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3416,10 +3484,12 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3561,7 +3631,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3677,7 +3747,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -3735,7 +3805,7 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3757,10 +3827,12 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3912,7 +3984,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3939,22 +4011,6 @@
             "build_dependencies": [],
             "features": []
           },
-          "fsevent-sys-4.1.0": {
-            "runtime_dependencies": [
-              {
-                "name": "libc",
-                "package_key": "libc-0.2.191",
-                "kind": "normal",
-                "features": [],
-                "uses_default_features": true,
-                "optional": false,
-                "target": null,
-                "tree": "target"
-              }
-            ],
-            "build_dependencies": [],
-            "features": []
-          },
           "iana-time-zone-0.1.65": {
             "runtime_dependencies": [
               {
@@ -3973,7 +4029,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3982,16 +4038,6 @@
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
-                "target": "cfg(target_os = \"macos\")",
-                "tree": "target"
-              },
-              {
-                "name": "fsevent_sys",
-                "package_key": "fsevent-sys-4.1.0",
-                "kind": "normal",
-                "features": [],
-                "uses_default_features": true,
-                "optional": true,
                 "target": "cfg(target_os = \"macos\")",
                 "tree": "target"
               },
@@ -4017,12 +4063,44 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
                 "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_foundation",
+                "package_key": "objc2-core-foundation-0.3.2",
+                "kind": "normal",
+                "features": [
+                  "CFArray",
+                  "CFDate",
+                  "CFError",
+                  "CFRunLoop",
+                  "CFString",
+                  "CFURL",
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": "cfg(target_os = \"macos\")",
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_services",
+                "package_key": "objc2-core-services-0.3.2",
+                "kind": "normal",
+                "features": [
+                  "FSEvents",
+                  "libc",
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": "cfg(target_os = \"macos\")",
                 "tree": "target"
               },
               {
@@ -4039,10 +4117,72 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "objc2-core-foundation-0.3.2": {
+            "runtime_dependencies": [
+              {
+                "name": "bitflags",
+                "package_key": "bitflags-2.13.2",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": true,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": [
+              "CFArray",
+              "CFDate",
+              "CFError",
+              "CFRunLoop",
+              "CFString",
+              "CFURL",
+              "CFUUID",
+              "alloc",
+              "bitflags",
+              "std"
+            ]
+          },
+          "objc2-core-services-0.3.2": {
+            "runtime_dependencies": [
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.191",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": true,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "objc2_core_foundation",
+                "package_key": "objc2-core-foundation-0.3.2",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": [
+              "FSEvents",
+              "alloc",
+              "libc",
+              "std"
+            ]
+          },
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -4163,7 +4303,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -4284,7 +4424,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -4342,7 +4482,7 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4364,10 +4504,12 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -4519,7 +4661,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.9.0",
+                "package_key": "cc-1.10.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -4640,7 +4782,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.0": {
+          "notify-8.2.1": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -4698,7 +4840,7 @@
               },
               {
                 "name": "notify_types",
-                "package_key": "notify-types-2.1.0",
+                "package_key": "notify-types-2.2.0",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4720,10 +4862,12 @@
             "build_dependencies": [],
             "features": [
               "fsevent-sys",
-              "macos_fsevent"
+              "macos_fsevent",
+              "objc2-core-foundation",
+              "objc2-core-services"
             ]
           },
-          "rustix-1.1.5": {
+          "rustix-1.1.6": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -4853,7 +4997,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.9.0": {
+    "cc-1.10.0": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -4902,17 +5046,14 @@
     "find-msvc-tools-0.1.15": {
       "edition": "2021"
     },
-    "fsevent-sys-4.1.0": {
-      "edition": "2018"
-    },
-    "gen-macros-0.1.51": {
+    "gen-macros-0.1.54": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.51": {
+    "gen-platform-0.1.54": {
       "edition": "2024"
     },
-    "gen-types-0.1.51": {
+    "gen-types-0.1.54": {
       "edition": "2024"
     },
     "generic-array-0.14.7": {
@@ -4974,11 +5115,11 @@
     "mio-1.2.4": {
       "edition": "2021"
     },
-    "notify-8.2.0": {
+    "notify-8.2.1": {
       "edition": "2021"
     },
-    "notify-types-2.1.0": {
-      "edition": "2021"
+    "notify-types-2.2.0": {
+      "edition": "2024"
     },
     "num-bigint-dig-0.8.6": {
       "edition": "2021",
@@ -4993,6 +5134,12 @@
     "num-traits-0.2.19": {
       "edition": "2021",
       "build_script": "build.rs"
+    },
+    "objc2-core-foundation-0.3.2": {
+      "edition": "2021"
+    },
+    "objc2-core-services-0.3.2": {
+      "edition": "2021"
     },
     "once_cell-1.21.4": {
       "edition": "2021"
@@ -5055,7 +5202,7 @@
     "rsa-0.9.10": {
       "edition": "2021"
     },
-    "rustix-1.1.5": {
+    "rustix-1.1.6": {
       "edition": "2021",
       "build_script": "build.rs"
     },
@@ -5106,7 +5253,7 @@
     "serde_spanned-0.6.9": {
       "edition": "2021"
     },
-    "shikumi-0.1.1083": {
+    "shikumi-0.1.1084": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -5119,7 +5266,7 @@
     "signature-2.2.0": {
       "edition": "2021"
     },
-    "smallvec-1.16.3": {
+    "smallvec-1.16.4": {
       "edition": "2018"
     },
     "spin-0.9.9": {
