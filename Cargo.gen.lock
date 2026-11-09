@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "5ba2868aa37bc71241dafd8267e5e2584bbca0a1b9a0c96eb0772ee58af20664",
+  "cargo_lock_sha256": "fd006f1caa7d352c44a8d3486fad15de35268392e87ed7521c98b75b88940e28",
   "manifest_sha256": {
-    "Cargo.toml": "475acf0cf1c1f61b19649aa71c26ed119ede138ca212573c7575a514e59f0191"
+    "Cargo.toml": "f426431c7528f7c41ad22d242395253a1731806309362aecbe1b5cc6048c7651"
   },
   "target_resolves": {
     "base": {
-      "arc-swap-1.9.3": {
+      "arc-swap-1.9.4": {
         "runtime_dependencies": [
           {
             "name": "rustversion",
@@ -51,7 +51,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -89,7 +89,7 @@
           "std"
         ]
       },
-      "cc-1.10.0": {
+      "cc-1.11.1": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -413,7 +413,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.54": {
+      "gen-macros-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -452,11 +452,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.54": {
+      "gen-platform-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.54",
+            "package_key": "gen-macros-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -466,7 +466,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.54",
+            "package_key": "gen-types-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -520,7 +520,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.54": {
+      "gen-types-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -810,7 +810,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "itoa-1.0.18": {
+      "itoa-1.0.19": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -852,7 +852,7 @@
           "default"
         ]
       },
-      "log-0.4.34": {
+      "log-0.4.35": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -951,7 +951,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.4",
+            "package_key": "smallvec-1.16.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -1550,7 +1550,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1829,7 +1829,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1912,7 +1912,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1956,7 +1956,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1977,7 +1977,7 @@
         "runtime_dependencies": [
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2037,7 +2037,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2097,11 +2097,11 @@
           "serde"
         ]
       },
-      "shikumi-0.1.1084": {
+      "shikumi-0.1.1085": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
-            "package_key": "arc-swap-1.9.3",
+            "package_key": "arc-swap-1.9.4",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2134,7 +2134,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.54",
+            "package_key": "gen-platform-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2144,7 +2144,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.54",
+            "package_key": "gen-types-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2154,7 +2154,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.1",
+            "package_key": "notify-8.2.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -2164,7 +2164,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.1",
+            "package_key": "notify-8.2.2",
             "kind": "normal",
             "features": [
               "macos_fsevent"
@@ -2281,7 +2281,7 @@
           "std"
         ]
       },
-      "smallvec-1.16.4": {
+      "smallvec-1.16.5": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2366,7 +2366,7 @@
           "visit-mut"
         ]
       },
-      "syn-3.0.9": {
+      "syn-3.0.10": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -2509,7 +2509,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2576,7 +2576,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "full"
@@ -2984,7 +2984,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3024,7 +3024,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3048,7 +3048,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3288,7 +3288,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3387,7 +3387,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3404,7 +3404,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -3428,7 +3428,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3631,7 +3631,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3730,7 +3730,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3747,7 +3747,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -3771,7 +3771,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3984,7 +3984,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -4029,7 +4029,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -4053,7 +4053,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4303,7 +4303,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -4407,7 +4407,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4424,7 +4424,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -4448,7 +4448,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4661,7 +4661,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -4765,7 +4765,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4782,7 +4782,7 @@
               "os-poll"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -4806,7 +4806,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -4974,7 +4974,7 @@
     }
   },
   "per_crate": {
-    "arc-swap-1.9.3": {
+    "arc-swap-1.9.4": {
       "edition": "2018"
     },
     "arrayvec-0.7.8": {
@@ -4997,7 +4997,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.10.0": {
+    "cc-1.11.1": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -5046,14 +5046,14 @@
     "find-msvc-tools-0.1.15": {
       "edition": "2021"
     },
-    "gen-macros-0.1.54": {
+    "gen-macros-0.1.55": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.54": {
+    "gen-platform-0.1.55": {
       "edition": "2024"
     },
-    "gen-types-0.1.54": {
+    "gen-types-0.1.55": {
       "edition": "2024"
     },
     "generic-array-0.14.7": {
@@ -5089,7 +5089,7 @@
     "inventory-0.3.25": {
       "edition": "2021"
     },
-    "itoa-1.0.18": {
+    "itoa-1.0.19": {
       "edition": "2021"
     },
     "lazy_static-1.5.1": {
@@ -5106,7 +5106,7 @@
     "linux-raw-sys-0.12.1": {
       "edition": "2021"
     },
-    "log-0.4.34": {
+    "log-0.4.35": {
       "edition": "2021"
     },
     "memchr-2.8.3": {
@@ -5115,7 +5115,7 @@
     "mio-1.2.4": {
       "edition": "2021"
     },
-    "notify-8.2.1": {
+    "notify-8.2.2": {
       "edition": "2021"
     },
     "notify-types-2.2.0": {
@@ -5253,7 +5253,7 @@
     "serde_spanned-0.6.9": {
       "edition": "2021"
     },
-    "shikumi-0.1.1084": {
+    "shikumi-0.1.1085": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -5266,7 +5266,7 @@
     "signature-2.2.0": {
       "edition": "2021"
     },
-    "smallvec-1.16.4": {
+    "smallvec-1.16.5": {
       "edition": "2018"
     },
     "spin-0.9.9": {
@@ -5281,7 +5281,7 @@
     "syn-2.0.119": {
       "edition": "2021"
     },
-    "syn-3.0.9": {
+    "syn-3.0.10": {
       "edition": "2021"
     },
     "tempfile-3.27.0": {
