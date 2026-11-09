@@ -3576,7 +3576,7 @@ mod hotswap_tests {
         // above at the same `ConfigStore::sync_proof` scope. That test asserts
         // the RequiresRestart half is STABLE on a Free-only swap; this one
         // asserts the Free half MOVES on the same swap. Together they weld
-        // the class-partition (CALHA.md §5.1 `Free | RequiresRestart` is
+        // the class-partition (`Free | RequiresRestart` is
         // 2-arm-total) at the store scope by proving both sides of the
         // partition matrix on the same event, mirroring the
         // `watermark_class_halves_partition_disagree_only_on_matching_class`

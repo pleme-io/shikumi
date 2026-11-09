@@ -371,7 +371,7 @@ pub const fn axis_cardinality<A: ClosedAxis>() -> usize {
 /// **Consumers** — dense bitsets / arrays sized by
 /// [`axis_cardinality::<A>()`][axis_cardinality] index through the
 /// ordinal without a `HashMap<A, usize>` per call site; canonical
-/// attestation manifests (THEORY.md §III.1.8 module manifests, §V.3
+/// attestation manifests (module manifests and
 /// three-pillar attestation) hash typescape cells in stable
 /// declaration order pinned by the ordinal; future cube-cover
 /// dashboards order rows by the ordinal of each axis cell instead of
@@ -435,7 +435,7 @@ pub fn axis_ordinal<A: ClosedAxis>(value: A) -> usize {
 ///    convention.
 ///
 /// **Consumers** — deserializing attestation manifests
-/// (THEORY.md §III.1.8 module manifests, §V.3 three-pillar
+/// (module manifests and three-pillar
 /// attestation) that carry typescape cells by stable declaration
 /// ordinal recover the typed value via [`axis_at`] without an
 /// `A::ALL.get(i).copied()` inline at every loader site. Dense
@@ -10155,7 +10155,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// [`Self::empty`] (so `empty.pointwise_max(&hist) == hist` and
     /// `empty.pointwise_min(&hist) == empty`), peer to the lattice
     /// algebra `(meet, join, leq)` pleme-io's compliance dimension
-    /// runs on (THEORY.md §III.3). The lattice algebra complements the
+    /// runs on. The lattice algebra complements the
     /// additive monoid quartet `(Add, AddAssign, Sub, SubAssign)` on
     /// the same histogram type — addition stacks observations, the
     /// lattice operations take the cellwise envelope.
@@ -10257,8 +10257,8 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// histogram surface carries a bounded distributive lattice
     /// `(AxisHistogram, pointwise_max, pointwise_min)` with bottom
     /// [`Self::empty`], peer to the lattice algebra
-    /// `(meet, join, leq)` pleme-io's compliance dimension runs on
-    /// (THEORY.md §III.3). The meet is the dual of the join on the
+    /// `(meet, join, leq)` pleme-io's compliance dimension runs on.
+    /// The meet is the dual of the join on the
     /// lattice: where `pointwise_max` reports the high-water mark per
     /// cell, `pointwise_min` reports the low-water mark.
     ///
@@ -10334,7 +10334,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
 
     /// Pointwise dominance ≤: `true` when every cell of `self` is
     /// `<=` the corresponding cell of `other`. The partial-order
-    /// relation `leq` from THEORY.md §III.3 lifted onto the per-cell
+    /// relation `leq` lifted onto the per-cell
     /// observation count — the underlying order the
     /// [`Self::pointwise_max`] / [`Self::pointwise_min`] lattice
     /// algebra is built on. `a.is_dominated_by(&b)` reads
@@ -14519,7 +14519,7 @@ pub fn axis_label<L: ClosedAxisLabel>(value: L) -> &'static str {
 /// string — no canonical label is empty). Stands to [`axis_label`] as
 /// [`axis_at`] stands to [`axis_ordinal`]: the safe, partial direction of
 /// the bijection surfaced as a free function so deserializers of
-/// attestation manifests (THEORY.md §III.1.8 module manifests, §V.3
+/// attestation manifests (module manifests and
 /// three-pillar attestation) that carry typescape cells by canonical
 /// name recover the typed value without naming the [`ClosedAxisLabel`]
 /// trait at the loader site.
@@ -15107,7 +15107,7 @@ impl<C: ProductCube> std::iter::FusedIterator for UnrealizableIter<C> {}
 /// the dense ordinal over the realizable surface (instead of by the
 /// full-cube ordinal that interleaves the unrealizable complement)
 /// reach the position through one helper; attestation manifests
-/// (THEORY.md §III.1.8 module manifests, §V.3 three-pillar
+/// (module manifests and three-pillar
 /// attestation) that hash the realizable surface in stable dense
 /// declaration order index through the dense ordinal without an
 /// inline `realizable_iter::<C>().position(|c| c == cell)` per
@@ -15160,7 +15160,7 @@ pub fn realizable_ordinal<C: ProductCube>(cell: C) -> Option<usize> {
 ///    realizable surface by construction.
 ///
 /// **Consumers** — deserializing attestation manifests
-/// (THEORY.md §III.1.8 module manifests, §V.3 three-pillar
+/// (module manifests and three-pillar
 /// attestation) that carry realizable cells by stable dense
 /// declaration ordinal recover the typed cell via [`realizable_at`]
 /// without a `realizable_iter::<C>().nth(i)` inline at every loader
@@ -16434,7 +16434,7 @@ serde_via_display_fromstr! {
 /// [`PartitionOrdinal`] value instead of two separate
 /// `Option<usize>` fields (one per face). Decoders take the typed
 /// enum and produce the cell through one named helper. Manifest
-/// serializers (THEORY.md §III.1.8 module manifests, §V.3
+/// serializers (module manifests and
 /// three-pillar attestation) that distinguish the realizable image
 /// from the consistency-violation complement at the address level
 /// carry the variant tag and the dense ordinal in lockstep without
@@ -28269,7 +28269,7 @@ mod tests {
     // ---- AxisHistogram pointwise-dominance partial-order laws ----
     //
     // The `(is_dominated_by, dominates)` predicate pair projects the
-    // `leq` partial order from THEORY.md §III.3 onto the per-cell
+    // `leq` partial order onto the per-cell
     // observation count — the boolean idiom-peer of the
     // (pointwise_max, pointwise_min) lattice ops. Together
     // `(pointwise_max, pointwise_min, is_dominated_by)` closes the

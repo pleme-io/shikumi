@@ -138,7 +138,7 @@ gcp-native = ["dep:reqwest", "dep:tokio"]
 # in kanchi (the std-only detection leaf that owns the downward-API / service-DNS
 # probes + the ClusterEnv trait). NO Kubernetes API client here — the layer is
 # fully exercised against kanchi::MockClusterEnv, so shikumi stays
-# k8s-client-free with only this feature on. See CONFIGURATION-MANAGEMENT.md §IX.
+# k8s-client-free with only this feature on.
 kube-discovery = ["dep:kanchi"]
 
 # The REAL in-cluster Kubernetes Secret reader (KubeSecretReader) behind the
