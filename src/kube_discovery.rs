@@ -1,8 +1,8 @@
 //! `KubeClusterDiscovery` — the ConfigPlane **DISCOVERED-tier** [`DiscoveryLayer`]
 //! that resolves config from the *running* Kubernetes cluster.
 //!
-//! This is shikumi's slice of the ConfigPlane discovery reach
-//! (`theory/CONFIGURATION-MANAGEMENT.md` §IX): a [`DiscoveryLayer`] whose
+//! This is shikumi's slice of the ConfigPlane discovery reach:
+//! a [`DiscoveryLayer`] whose
 //! [`discover`][DiscoveryLayer::discover] reads the cluster around the pod —
 //! its own namespace/name (downward API), whether a named `Service` resolves
 //! (cluster DNS), and named `Secret` keys — and emits them as the partial

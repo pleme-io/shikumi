@@ -1,6 +1,6 @@
 # Shikumi (仕組み) — Config Discovery, Hot-Reload, and ArcSwap Store
 
-> **★★★ CSE / Knowable Construction.** This repo operates under **Constructive Substrate Engineering** — canonical specification at [`pleme-io/theory/CONSTRUCTIVE-SUBSTRATE-ENGINEERING.md`](https://github.com/pleme-io/theory/blob/main/CONSTRUCTIVE-SUBSTRATE-ENGINEERING.md). The Compounding Directive (operational rules: solve once, load-bearing fixes only, idiom-first, models stay current, direction beats velocity) is in the org-level pleme-io/CLAUDE.md ★★★ section. Read both before non-trivial changes.
+> **★★★ CSE / Knowable Construction.** This repo operates under **Constructive Substrate Engineering**. The Compounding Directive (operational rules: solve once, load-bearing fixes only, idiom-first, models stay current, direction beats velocity) is in the org-level pleme-io/CLAUDE.md ★★★ section. Read it before non-trivial changes.
 
 
 <!-- Blackmatter alignment: pillars 2 -->
@@ -75,8 +75,6 @@ env — shadow-first, golden-conf-gated.
 `ConfigWatcher` · the `TieredConfig` selector · the `DiscoveryLayer` trait +
 `compose` · kanchi host/env/cloud probes.
 
-**Canonical:** [`theory/CONFIGURATION-MANAGEMENT.md`](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
-(fleet config shape; the sealed fold + `Provenance{tier,source}` are named there).
 **Operator handle:** the `configplane` skill. Standing rule: a shikumi PR toward
 this destination advances a tier or leaves a `pending-configplane:` note.
 
@@ -229,7 +227,7 @@ Later layers override earlier ones. File format auto-detected by extension.
 
 ### Tiered Progressive-Discovery Resolution (the default)
 
-The fleet config default (per `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5)
+The fleet config default
 is the sealed fold `bare() → discovered()[kanchi] → prescribed_default() → file
 → env → runtime`, resolved in typed `ConfigTier` `ClosedAxis` precedence order:
 

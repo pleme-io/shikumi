@@ -813,7 +813,7 @@ pub(crate) use text_source_provider;
 /// mapper — a Kubernetes `ConfigMap` reader whose upstream is a
 /// [`kube`](https://docs.rs/kube) API call, a Vault secret store whose
 /// upstream is an HTTP GET, an HTTP `/config` endpoint that produces a
-/// figment [`Value`] directly, a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// figment [`Value`] directly, a ConfigPlane
 /// central-authority broadcast layer whose upstream is a subscription
 /// stream — implements its whole [`figment::Provider`] surface as ONE
 /// macro invocation:
@@ -1167,7 +1167,7 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
 /// tag this same file already recognizes, a `with_env_delim(prefix, delim)`
 /// builder taking a caller-chosen nested-key separator for consumers
 /// whose env keys use `_` or `.` rather than the fleet-standard `__`,
-/// a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// a ConfigPlane
 /// broadcast Env-tier peer that re-reads env on push —
 /// authors ZERO merge-side boilerplate by routing its body through this
 /// helper (or its own peer helper that swaps the provider constructor
@@ -1365,7 +1365,7 @@ where
 /// / [`provider_data_from_shikumi_load`] / [`provider_metadata_for`]
 /// substrate helpers for the exact same reason those exist: any future
 /// shikumi-built provider whose upstream speaks JSON — a
-/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// ConfigPlane
 /// central-authority broadcast layer, an HTTP `/config` endpoint, a
 /// Kubernetes `ConfigMap` reader whose values arrive as JSON strings, a
 /// Vault secret store — routes its `load()` body through this single site
@@ -1841,7 +1841,7 @@ impl ProviderChain {
     /// declares. A future Env-tier peer builder ([`Self::with_source`]'s
     /// `Env` arm today; a `with_env_bare()` / `with_env_delim(prefix,
     /// delim)` /
-    /// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// ConfigPlane
     /// broadcast Env-tier peer tomorrow) inherits
     /// the merge + record convention by routing its own body through the
     /// same helper.

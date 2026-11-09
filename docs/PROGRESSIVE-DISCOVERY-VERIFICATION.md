@@ -8,7 +8,7 @@ in which every effective value carries a typed [`Provenance`].
 > **The bright line (never round up).** A `Result::Err` / runtime check is
 > **only-mitigated**. An `Err` at a parse boundary + sealed construction is
 > **parse-time-rejected**. A compile error / absent code path is
-> **truly-unrep**. Ceilings `C1–C6` per `theory/UNREPRESENTABILITY.md`
+> **truly-unrep**. Ceilings `C1–C6`
 > (`C1` no dependent types; `C-map` a path-keyed side-map is not a per-field
 > type wrapper). Each row states the tier it *actually* sits at.
 

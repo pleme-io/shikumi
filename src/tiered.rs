@@ -189,8 +189,7 @@ pub enum ConfigTierKind {
 // Fleet-wide dispatcher-catalog registration. TWELFTH consumer
 // class adopting gen-platform's typed-dispatcher catamorphism
 // (after gen / caixa / wasm-platform / cofre / shigoto / engenho /
-// magma / kura / pangea / tatara / hanshi). See
-// theory/UNIFIED-COMPUTING-MODEL.md §VI.
+// magma / kura / pangea / tatara / hanshi).
 gen_platform::register_dispatcher!("shikumi.config-tier-kind", ConfigTierKind);
 
 impl ConfigTierKind {
@@ -430,8 +429,7 @@ impl ConfigTierKind {
     /// `0` for [`Self::Bare`], `1` for [`Self::Discovered`], `2` for
     /// [`Self::Default`], `3` for [`Self::Custom`]. The declaration
     /// order of [`Self::ALL`], which is also the sealed-fold precedence
-    /// `bare → discovered → prescribed_default → custom` (per
-    /// `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5 — a higher
+    /// `bare → discovered → prescribed_default → custom` (a higher
     /// ordinal wins in the progressive fold).
     ///
     /// Inherent `const`-callable mirror of the trait-uniform
@@ -535,8 +533,7 @@ impl ConfigTierKind {
     /// `ConfigTierKind::from_ordinal(i) == Some(Self::ALL[i])` for every
     /// `i < 4`. The inherent match and the [`Self::ALL`] slice literal
     /// carry the same declaration order — the sealed-fold precedence
-    /// `bare → discovered → prescribed_default → custom` per
-    /// `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5 — so the test
+    /// `bare → discovered → prescribed_default → custom` — so the test
     /// below pins the pointwise agreement and a future edit that shifts
     /// one without the other fails at test time on the first drifted
     /// position. Pinned by
@@ -592,8 +589,8 @@ impl ConfigTierKind {
     /// axis, and this landing closes the sibling on the tier side to
     /// match the source side.
     ///
-    /// The naming coincides with the fleet's sealed-fold vocabulary in
-    /// `theory/CONFIGURATION-MANAGEMENT.md`: `bare()` → `discovered()`
+    /// The naming coincides with the fleet's sealed-fold vocabulary:
+    /// `bare()` → `discovered()`
     /// → `prescribed_default()` are the three tier constructors the
     /// `TieredConfig` trait names computed, and `Custom` is the sole
     /// operator-supplied tier — so a consumer reading
@@ -764,8 +761,7 @@ impl ConfigTier {
     /// inner [`std::path::PathBuf`] payload. Matches the declaration
     /// order carried by [`ConfigTierKind::ALL`], which is also the
     /// sealed-fold precedence `bare → discovered → prescribed_default
-    /// → custom` (per `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5
-    /// — a higher ordinal wins in the progressive fold).
+    /// → custom` (a higher ordinal wins in the progressive fold).
     ///
     /// Tag-side sibling of [`ConfigTierKind::ordinal`]: the payload-
     /// bearing [`ConfigTier`] value projects to the same `usize`
@@ -47906,8 +47902,8 @@ mod tests {
         // Some(v)` for every v: ConfigTierKind. The forward-map
         // `ordinal` and the inverse-map `from_ordinal` share the SAME
         // closed four-cell declaration order (`ConfigTierKind::ALL`,
-        // sealed-fold precedence `bare → discovered → default → custom`
-        // per theory/CONFIGURATION-MANAGEMENT.md Primitive 5); the law
+        // sealed-fold precedence `bare → discovered → default → custom`);
+        // the law
         // holds by construction. This pin re-states it once on the
         // ConfigTierKind surface so a future edit that drifts one match
         // without the other fails here on the first drifted variant.
@@ -48017,8 +48013,7 @@ mod tests {
     fn config_tier_kind_ord_matches_all_declaration_order() {
         // The derived Ord on ConfigTierKind is declaration-order lex
         // over ALL: `Bare < Discovered < Default < Custom` — the
-        // sealed-fold precedence per theory/CONFIGURATION-MANAGEMENT.md
-        // Primitive 5. A BTreeMap keyed on the tier axis (per-tier
+        // sealed-fold precedence. A BTreeMap keyed on the tier axis (per-tier
         // attribution histograms, per-tier reload-summary counters,
         // attestation manifests recording the tier cardinality mix of a
         // recorded chain, structured-diagnostic legends bucketing per-

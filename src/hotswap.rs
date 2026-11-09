@@ -1,4 +1,4 @@
-//! Per-field hot-swap-safety classification — theory/CALHA.md §6.3.
+//! Per-field hot-swap-safety classification.
 //!
 //! Composes an already-`#[derive(HotSwap)]`-classified `T` (via the
 //! sibling `pleme-hotswap`/`pleme-hotswap-derive` crates) with shikumi's
@@ -77,8 +77,7 @@ impl<T> std::ops::Deref for ValidatedTieredConfig<T> {
 /// — the TYPE is native to shikumi, never imported.
 ///
 /// The two class-scoped hashes ([`Self::restart_required`] and
-/// [`Self::free`]) close the [`HotSwapClass`] partition (theory/CALHA.md
-/// §5.1 — `Free | RequiresRestart` is 2-arm-total): every serialized
+/// [`Self::free`]) close the [`HotSwapClass`] partition (`Free | RequiresRestart` is 2-arm-total): every serialized
 /// top-level field feeds exactly one half, and each half moves iff a
 /// field of that class changed. This lets a per-replica observer answer
 /// both "is a restart pending?" (`restart_required` moved) AND "did any
@@ -90,7 +89,7 @@ pub struct ConfigWatermark {
     pub full: blake3::Hash,
     /// Hash of ONLY the fields classified [`HotSwapClass::RequiresRestart`]
     /// — a `Free`-field-only edit leaves this hash unchanged, which is
-    /// exactly the signal `calha`'s split watermark (theory/CALHA.md §2)
+    /// exactly the signal `calha`'s split watermark
     /// polls to decide whether a running process is missing a restart.
     pub restart_required: blake3::Hash,
     /// Hash of ONLY the fields classified [`HotSwapClass::Free`] — the
@@ -174,8 +173,8 @@ impl ConfigWatermark {
 }
 
 /// The queryable per-replica convergence fact `calha` polls via
-/// `/healthz/config` (theory/CALHA.md §2) — NOT a cross-replica
-/// guarantee (see theory/CALHA.md §13 risk 3).
+/// `/healthz/config` — NOT a cross-replica
+/// guarantee.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigSyncProof {
     /// [`crate::ConfigStore::generation`] at the moment this proof was
@@ -363,7 +362,7 @@ fn parse_wire_hash(hex: &str, field: &'static str) -> Result<blake3::Hash, Shiku
 /// — a per-half `bool` triple with the class-partition invariant welded
 /// at the type shape.
 ///
-/// Every consumer polling `/healthz/config` (theory/CALHA.md §2) receives
+/// Every consumer polling `/healthz/config` receives
 /// a stream of [`ConfigSyncProofWire`] snapshots, and every observer that
 /// wants to react to a change compares "last seen" against "just received"
 /// on the class-scoped halves. Before this type each such consumer wrote
@@ -384,7 +383,7 @@ fn parse_wire_hash(hex: &str, field: &'static str) -> Result<blake3::Hash, Shiku
 /// The class-partition invariant `full_moved iff (restart_required_moved ||
 /// free_moved)` holds under the [`ConfigWatermark::compute`] assumption
 /// that the `field_classes` slice partitions every serialized top-level
-/// field (theory/CALHA.md §5.1 — the `Free | RequiresRestart` closure is
+/// field (the `Free | RequiresRestart` closure is
 /// 2-arm-total). [`Self::partitioned_class_invariant_holds`] states the
 /// biconditional at the type level. The one-way implication
 /// `restart_required_moved || free_moved ⇒ full_moved` — which holds
@@ -401,8 +400,8 @@ pub struct WatermarkDelta {
     /// not that field is class-partitioned into either half below.
     pub full_moved: bool,
     /// Whether the `RequiresRestart` half ([`ConfigWatermark::restart_required`])
-    /// moved — the exact signal `calha`'s split watermark (theory/CALHA.md
-    /// §2) polls to decide whether a running process is missing a restart.
+    /// moved — the exact signal `calha`'s split watermark
+    /// polls to decide whether a running process is missing a restart.
     pub restart_required_moved: bool,
     /// Whether the Free half ([`ConfigWatermark::free`]) moved — the
     /// symmetric peer of [`Self::restart_required_moved`], observed by a
@@ -836,7 +835,7 @@ impl WatermarkRelation {
 /// **Tier: truly-unrepresentable *within this authored surface*** — a
 /// stationary payload has no argument form. The only constructor
 /// ([`Self::new`]) refuses a stationary delta at its argument boundary.
-/// This is the [`UNREPRESENTABILITY.md`](https://github.com/pleme-io/theory/blob/main/UNREPRESENTABILITY.md)
+/// This is the unrepresentability
 /// tier the crate already reaches for [`ValidatedTieredConfig`] on the
 /// value side and [`std::num::NonZeroU64`] on the count side, extended
 /// to the watermark-delta payload.
@@ -9141,7 +9140,7 @@ impl SameStoreConsistencyKind {
     /// over [`SameStoreConsistencyKind`] — a per-corner metrics counter
     /// bucketing witnessed-publish observations distinctly from the
     /// null-hypothesis polling case (a
-    /// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// ConfigPlane
     /// broadcast-reload counter separating polling ticks from
     /// publish-observing ticks; a debounce-window guard grouping the
     /// two publish-observing arms before the guard's window opens; a

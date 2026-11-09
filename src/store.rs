@@ -660,7 +660,7 @@ where
     ///
     /// A future non-watching [`ConfigStore`] constructor — a
     /// [`ConfigDiscovery::load_merged`](crate::ConfigDiscovery)-fed
-    /// convenience one-liner, a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// convenience one-liner, a ConfigPlane
     /// push-side "install-once" variant, an in-memory `from_value`
     /// short-circuit for tests — routes its own body through this helper
     /// and inherits the non-watching default state by construction; each
@@ -687,7 +687,7 @@ where
     }
 }
 
-/// Hot-swap-classified hot-reload — theory/CALHA.md §6.2/§6.3. A sibling
+/// Hot-swap-classified hot-reload. A sibling
 /// of [`ConfigStore::load_and_watch`], gated behind the `hotswap`
 /// feature and the extra `T: HotSwapClassifier + Validate` bounds.
 #[cfg(feature = "hotswap")]
@@ -3339,8 +3339,8 @@ mod tests {
     }
 }
 
-/// Real, end-to-end proof of `load_and_watch_hotswap` — theory/CALHA.md
-/// §6.2's own stated acceptance criteria: "a unit test asserting the
+/// Real, end-to-end proof of `load_and_watch_hotswap` against its own
+/// stated acceptance criteria: "a unit test asserting the
 /// watch loop survives an injected malformed reload is part of M1's own
 /// acceptance criteria — not an optional nice-to-have." Uses the REAL
 /// `#[derive(HotSwap)]` (via the `pleme-hotswap-derive` dev-dependency),

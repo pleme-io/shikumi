@@ -3568,7 +3568,7 @@ fn dir_override_or_env(override_dir: Option<&Path>, env_var: &str) -> Option<Pat
         // $XDG_CONFIG_HOME and $HOME, and shikumi is a dependency of 81 fleet
         // repos, so a relative value here made config discovery resolve
         // against the invoking directory everywhere at once — the
-        // masked-branch class (theory/MASKED-BRANCH.md) at its widest reach.
+        // masked-branch class at its widest reach.
         //
         // `env::var` is kept rather than `var_os`: switching would newly
         // accept non-UTF-8 values that today fall through as NotUnicode, and

@@ -154,7 +154,7 @@ impl WatchEventClass {
     /// [`should_reload_on_event`] helper now routes through this
     /// event-level entry, and a future watcher-driven consumer — a
     /// broadcast-subscription reload variant, a per-tenant reload variant,
-    /// the [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// the ConfigPlane
     /// push-side reload variant — that owns its own dispatch closure
     /// classifies the incoming [`notify::Event`] at this one site instead
     /// of open-coding the `.kind` projection at each. The classifier
@@ -858,7 +858,7 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
 ///
 /// A future watcher-driven [`crate::ConfigStore`] constructor — a
 /// broadcast-subscription reload variant, a per-tenant reload variant, the
-/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// ConfigPlane
 /// push-side reload variant — routes its own closure through this helper
 /// and inherits the preamble by construction; the reload-leg body stays a
 /// per-constructor decision, but the classify + symlink log-preamble lives
@@ -911,7 +911,7 @@ pub(crate) fn should_reload_on_event(event: &notify::Event) -> bool {
 ///
 /// A future watcher-driven consumer — a broadcast-subscription reload
 /// variant, a per-tenant reload variant, the
-/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// ConfigPlane
 /// push-side reload variant, a per-class watcher-event histogram, a
 /// debounce-window guard grouping the two mutation cells before the
 /// guard's window opens, a structured-tracing span attribute

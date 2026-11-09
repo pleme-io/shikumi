@@ -37,7 +37,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("hotswap")
 [features]
 default = []
 
-# Per-field hot-swap-safety classification (theory/CALHA.md §6.3).
+# Per-field hot-swap-safety classification.
 #
 # RESTORED 2026-08-06. This feature was deleted — not stubbed, deleted —
 # because `pleme-hotswap` was not on crates.io and the auto-release
@@ -126,7 +126,7 @@ vault-native = ["dep:reqwest", "dep:tokio"]
 # the consumer that already has auth plumbing. See RFC 0001.
 gcp-native = ["dep:reqwest", "dep:tokio"]
 
-# Per-field hot-swap-safety classification (theory/CALHA.md SS6.3):
+# Per-field hot-swap-safety classification:
 # a T: HotSwapClassifier + Validate wrapper (ValidatedTieredConfig),
 # a split blake3 watermark (full vs. restart-required subtree), and
 # hotswap feature removed — pleme-hotswap not on crates.io, can't be
@@ -164,8 +164,7 @@ github = ["dep:reqwest", "reqwest/blocking", "dep:jsonwebtoken", "dep:base64"]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "toml"] }
 
-# Typed-dispatcher catalog integration
-# (theory/UNIFIED-COMPUTING-MODEL.md §VI).
+# Typed-dispatcher catalog integration.
 gen-platform = "0.1"
 gen-types = "0.1"
 # Cargo features activate globally per-target — turning on a notify
