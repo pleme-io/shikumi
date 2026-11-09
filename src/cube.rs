@@ -10347,7 +10347,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// the cellwise lattice through `Self`, and `is_dominated_by`
     /// projects the underlying partial order through `bool`. Together
     /// `(pointwise_max, pointwise_min, is_dominated_by)` closes the
-    /// `(join, meet, leq)` triple from §III.3 on the same histogram
+    /// `(join, meet, leq)` triple on the same histogram
     /// surface.
     ///
     /// Before this lift, every consumer reaching the pointwise-≤
@@ -10405,7 +10405,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// **Partiality**: the order is *partial*, not total — two
     /// histograms can be incomparable (`!a.is_dominated_by(&b) &&
     /// !b.is_dominated_by(&a)`) when one cell is strictly larger on
-    /// each side. This matches §III.3's `leq` partial order on the
+    /// each side. This matches the `leq` partial order on the
     /// compliance lattice (two baselines can be incomparable when each
     /// requires controls the other doesn't).
     ///
@@ -27811,8 +27811,7 @@ mod tests {
     // ---- AxisHistogram cellwise-lattice trait-uniform laws ----
     //
     // The (pointwise_max, pointwise_min) lattice surface lifts the
-    // bounded distributive lattice `(meet, join, leq)` from THEORY.md
-    // §III.3 onto the per-cell observation count, peer to the lattice
+    // bounded distributive lattice `(meet, join, leq)` onto the per-cell observation count, peer to the lattice
     // algebra pleme-io's compliance dimension already runs on. The
     // trait-uniform laws below pin the lattice axioms uniformly across
     // every [`ClosedAxis`] implementor: `empty` is the bottom (identity
@@ -28273,7 +28272,7 @@ mod tests {
     // observation count — the boolean idiom-peer of the
     // (pointwise_max, pointwise_min) lattice ops. Together
     // `(pointwise_max, pointwise_min, is_dominated_by)` closes the
-    // `(join, meet, leq)` triple from §III.3 on the histogram surface.
+    // `(join, meet, leq)` triple on the histogram surface.
     // The trait-uniform laws below pin the partial-order axioms
     // uniformly across every [`ClosedAxis`] implementor: reflexivity
     // (every histogram dominates itself); empty is the bottom (the
@@ -28623,7 +28622,7 @@ mod tests {
         // from the total order [`Vec`]'s default lexicographic
         // `PartialOrd` would induce (lexicographic would always pick a
         // side); pins the histogram order is the lattice's partial
-        // order from §III.3, not a lexicographic total order.
+        // order, not a lexicographic total order.
         //
         // [`DiffLineKind::ALL`] declaration order is
         // `[Removed, Added, Context]`.
